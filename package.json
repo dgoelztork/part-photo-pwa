@@ -1,0 +1,25 @@
+{
+  "name": "part-photo-pwa",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/papaparse": "^5.5.2",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-mkcert": "^1.17.9",
+    "vite-plugin-pwa": "^1.2.0"
+  },
+  "dependencies": {
+    "@azure/msal-browser": "^4.29.0",
+    "html5-qrcode": "^2.3.8",
+    "idb-keyval": "^6.2.2",
+    "jszip": "^3.10.1",
+    "papaparse": "^5.5.3"
+  }
+}
