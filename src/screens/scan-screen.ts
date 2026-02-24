@@ -1,14 +1,17 @@
 import {
-  startScanner,
-  stopScanner,
-  scanFromFile,
-} from "../lib/barcode-scanner";
+  startCamera,
+  stopCamera,
+  cropVideoFrame,
+  recognizePartNumber,
+} from "../lib/ocr-reader";
 import { lookupPart } from "../lib/csv-store";
 
 interface ScanResult {
   partNumber: string;
   description: string;
 }
+
+let activeStream: MediaStream | null = null;
 
 export function renderScanScreen(
   container: HTMLElement,
@@ -19,12 +22,24 @@ export function renderScanScreen(
     <div class="screen scan-screen">
       <div class="screen-header">
         <button id="back-btn" class="btn btn-text">&larr; Back</button>
-        <h2>Scan Barcode</h2>
+        <h2>Read Part Number</h2>
       </div>
 
-      <div id="scanner-container" class="scanner-container">
-        <div id="scanner-reader"></div>
-        <p class="scanner-hint">Point camera at a barcode (Code 128 / Code 39)</p>
+      <div class="camera-section">
+        <div id="camera-container" class="camera-container">
+          <video id="camera-preview" autoplay playsinline muted></video>
+          <div class="camera-target"></div>
+        </div>
+        <p id="camera-hint" class="scanner-hint">
+          Position part number (M#######) inside the box
+        </p>
+        <button id="capture-read-btn" class="btn btn-primary btn-large">
+          Capture &amp; Read
+        </button>
+      </div>
+
+      <div id="ocr-status" class="ocr-status" style="display: none;">
+        <span class="status-loading">Reading text...</span>
       </div>
 
       <div id="scan-result" class="scan-result" style="display: none;">
@@ -41,14 +56,14 @@ export function renderScanScreen(
             Continue to Photos
           </button>
           <button id="rescan-btn" class="btn btn-secondary">
-            Scan Again
+            Try Again
           </button>
         </div>
       </div>
 
       <div class="scan-fallbacks">
-        <button id="file-scan-btn" class="btn btn-secondary">
-          Scan from Photo
+        <button id="photo-scan-btn" class="btn btn-secondary">
+          Take Photo Instead
         </button>
         <button id="manual-btn" class="btn btn-secondary">
           Enter Manually
@@ -59,7 +74,7 @@ export function renderScanScreen(
         <div class="card">
           <label class="field">
             <span>Part Number</span>
-            <input id="manual-part" type="text" placeholder="Enter part number"
+            <input id="manual-part" type="text" placeholder="e.g. M1024253"
                    autocapitalize="characters" />
           </label>
           <label class="field">
@@ -71,15 +86,15 @@ export function renderScanScreen(
           </button>
         </div>
       </div>
-
-      <!-- Hidden elements for file scanning -->
-      <div id="temp-file-scanner" style="display:none;"></div>
     </div>
   `;
 
   const backBtn = container.querySelector("#back-btn") as HTMLButtonElement;
-  const fileScanBtn = container.querySelector(
-    "#file-scan-btn"
+  const captureBtn = container.querySelector(
+    "#capture-read-btn"
+  ) as HTMLButtonElement;
+  const photoScanBtn = container.querySelector(
+    "#photo-scan-btn"
   ) as HTMLButtonElement;
   const manualBtn = container.querySelector(
     "#manual-btn"
@@ -91,17 +106,23 @@ export function renderScanScreen(
     "#manual-lookup-btn"
   ) as HTMLButtonElement;
 
-  backBtn.addEventListener("click", async () => {
-    await stopScanner();
+  // Back — stop camera and navigate
+  backBtn.addEventListener("click", () => {
+    cleanup();
     onBack();
   });
 
-  // Start live scanner
-  initScanner(container, onPartScanned);
+  // Start live camera preview
+  initCamera(container);
 
-  // File scan fallback
-  fileScanBtn.addEventListener("click", () => {
-    handleFileScan(container, onPartScanned);
+  // Capture & Read — grab frame, OCR it
+  captureBtn.addEventListener("click", () => {
+    handleCaptureAndRead(container, onPartScanned);
+  });
+
+  // Take Photo fallback (uses native camera via <input capture>)
+  photoScanBtn.addEventListener("click", () => {
+    handlePhotoScan(container, onPartScanned);
   });
 
   // Manual entry toggle
@@ -118,7 +139,6 @@ export function renderScanScreen(
     handleManualEntry(container, onPartScanned);
   });
 
-  // Enter key on manual part input
   const manualPartInput = container.querySelector(
     "#manual-part"
   ) as HTMLInputElement;
@@ -129,37 +149,145 @@ export function renderScanScreen(
   });
 }
 
-async function initScanner(
-  container: HTMLElement,
-  onPartScanned: (partNumber: string, description: string) => void
-): Promise<void> {
-  const scannerHint = container.querySelector(
-    ".scanner-hint"
-  ) as HTMLElement;
+function cleanup(): void {
+  stopCamera(activeStream);
+  activeStream = null;
+}
+
+async function initCamera(container: HTMLElement): Promise<void> {
+  const video = container.querySelector(
+    "#camera-preview"
+  ) as HTMLVideoElement;
+  const hint = container.querySelector("#camera-hint") as HTMLElement;
+  const captureBtn = container.querySelector(
+    "#capture-read-btn"
+  ) as HTMLButtonElement;
 
   try {
-    await startScanner("scanner-reader", (partNumber) => {
-      handleScanResult(container, partNumber, onPartScanned);
-    });
+    activeStream = await startCamera(video);
   } catch (err) {
-    if (scannerHint) {
-      scannerHint.textContent =
-        "Camera not available. Use 'Scan from Photo' or 'Enter Manually' below.";
-      scannerHint.classList.add("error-text");
+    console.warn("Camera init failed:", err);
+    if (hint) {
+      hint.textContent =
+        "Camera not available. Use 'Take Photo Instead' or 'Enter Manually'.";
+      hint.classList.add("error-text");
     }
-    console.warn("Scanner init failed:", err);
+    captureBtn.style.display = "none";
+    // Hide the video container
+    const camContainer = container.querySelector(
+      "#camera-container"
+    ) as HTMLElement;
+    if (camContainer) camContainer.style.display = "none";
   }
 }
 
-function handleScanResult(
+async function handleCaptureAndRead(
   container: HTMLElement,
-  partNumber: string,
+  onPartScanned: (partNumber: string, description: string) => void
+): Promise<void> {
+  const video = container.querySelector(
+    "#camera-preview"
+  ) as HTMLVideoElement;
+  const captureBtn = container.querySelector(
+    "#capture-read-btn"
+  ) as HTMLButtonElement;
+  const ocrStatus = container.querySelector("#ocr-status") as HTMLElement;
+  const hint = container.querySelector("#camera-hint") as HTMLElement;
+
+  if (!video.videoWidth) return;
+
+  captureBtn.disabled = true;
+  ocrStatus.style.display = "block";
+
+  // Crop to the target box area (center strip)
+  const targetRect = getTargetRect(video);
+  const cropped = cropVideoFrame(video, targetRect);
+
+  try {
+    const partNumber = await recognizePartNumber(cropped);
+    ocrStatus.style.display = "none";
+
+    if (partNumber) {
+      const result = resolvePart(partNumber);
+      showResult(container, result, onPartScanned);
+    } else {
+      hint.textContent =
+        "No part number found (M#######). Reposition and try again.";
+      hint.classList.add("error-text");
+      captureBtn.disabled = false;
+    }
+  } catch (err) {
+    console.error("OCR error:", err);
+    ocrStatus.style.display = "none";
+    hint.textContent = "Reading failed. Try again or enter manually.";
+    hint.classList.add("error-text");
+    captureBtn.disabled = false;
+  }
+}
+
+/** Calculate the crop rectangle matching the on-screen target box. */
+function getTargetRect(video: HTMLVideoElement): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  // The CSS target box is 80% width, 60px tall, centered
+  const containerWidth = video.clientWidth;
+  const containerHeight = video.clientHeight;
+  const boxWidth = containerWidth * 0.8;
+  const boxHeight = 60;
+  const x = (containerWidth - boxWidth) / 2;
+  const y = (containerHeight - boxHeight) / 2;
+
+  return { x, y, width: boxWidth, height: boxHeight };
+}
+
+function handlePhotoScan(
+  container: HTMLElement,
   onPartScanned: (partNumber: string, description: string) => void
 ): void {
-  stopScanner();
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/*";
+  input.capture = "environment";
 
-  const result = resolvePart(partNumber);
-  showResult(container, result, onPartScanned);
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+
+    const ocrStatus = container.querySelector("#ocr-status") as HTMLElement;
+    const hint = container.querySelector("#camera-hint") as HTMLElement;
+    ocrStatus.style.display = "block";
+    ocrStatus.innerHTML = '<span class="status-loading">Reading photo...</span>';
+
+    try {
+      // For photo fallback, show the image and let user see what was captured
+      // OCR the full image since we can't crop interactively
+      const partNumber = await recognizePartNumber(file);
+
+      ocrStatus.style.display = "none";
+
+      if (partNumber) {
+        const result = resolvePart(partNumber);
+        showResult(container, result, onPartScanned);
+      } else {
+        hint.textContent =
+          "No part number found (M#######). Try getting closer or enter manually.";
+        hint.classList.add("error-text");
+      }
+    } catch (err) {
+      console.error("Photo OCR error:", err);
+      ocrStatus.style.display = "none";
+      hint.textContent = "Reading failed. Try again or enter manually.";
+      hint.classList.add("error-text");
+    }
+    input.remove();
+  };
+
+  input.style.display = "none";
+  document.body.appendChild(input);
+  input.click();
 }
 
 function showResult(
@@ -181,50 +309,31 @@ function showResult(
   resultDesc.textContent = result.description || "(no description found)";
   scanResult.style.display = "block";
 
-  continueBtn.onclick = async () => {
-    await stopScanner();
+  // Hide camera controls when showing result
+  const cameraSection = container.querySelector(
+    ".camera-section"
+  ) as HTMLElement;
+  if (cameraSection) cameraSection.style.display = "none";
+
+  continueBtn.onclick = () => {
+    cleanup();
     onPartScanned(result.partNumber, result.description);
   };
 
   rescanBtn.onclick = () => {
     scanResult.style.display = "none";
-    initScanner(container, (pn, desc) => onPartScanned(pn, desc));
-  };
-}
-
-function handleFileScan(
-  container: HTMLElement,
-  onPartScanned: (partNumber: string, description: string) => void
-): void {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = "image/*";
-  input.capture = "environment";
-
-  input.onchange = async () => {
-    const file = input.files?.[0];
-    if (!file) return;
-
-    const hint = container.querySelector(".scanner-hint") as HTMLElement;
-    if (hint) hint.textContent = "Scanning image...";
-
-    const partNumber = await scanFromFile(file);
-    if (partNumber) {
-      const result = resolvePart(partNumber);
-      showResult(container, result, onPartScanned);
-    } else {
-      if (hint) {
-        hint.textContent =
-          "Could not read barcode from image. Try again or enter manually.";
-        hint.classList.add("error-text");
-      }
+    if (cameraSection) cameraSection.style.display = "block";
+    const hint = container.querySelector("#camera-hint") as HTMLElement;
+    if (hint) {
+      hint.textContent = "Position part number (M#######) inside the box";
+      hint.classList.remove("error-text");
     }
-    input.remove();
+    const captureBtn = container.querySelector(
+      "#capture-read-btn"
+    ) as HTMLButtonElement;
+    if (captureBtn) captureBtn.disabled = false;
+    initCamera(container);
   };
-
-  input.style.display = "none";
-  document.body.appendChild(input);
-  input.click();
 }
 
 function handleManualEntry(
@@ -249,7 +358,7 @@ function handleManualEntry(
   const catalogDesc = lookupPart(partNumber);
   const description = manualDesc || catalogDesc || "Unknown-Part";
 
-  stopScanner();
+  cleanup();
   onPartScanned(partNumber, description);
 }
 

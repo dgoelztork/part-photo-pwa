@@ -17,9 +17,9 @@
   },
   "dependencies": {
     "@azure/msal-browser": "^4.29.0",
-    "html5-qrcode": "^2.3.8",
     "idb-keyval": "^6.2.2",
     "jszip": "^3.10.1",
-    "papaparse": "^5.5.3"
+    "papaparse": "^5.5.3",
+    "tesseract.js": "^7.0.0"
   }
 }

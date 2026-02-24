@@ -265,31 +265,51 @@ body {
   margin-top: 4px;
 }
 
-/* === Scanner Screen === */
-.scanner-container {
+/* === Scanner / OCR Screen === */
+.camera-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.camera-container {
+  position: relative;
   border-radius: var(--radius);
   overflow: hidden;
   background: #000;
-  position: relative;
-}
-
-#scanner-reader {
   width: 100%;
-  min-height: 250px;
+  height: 180px;
 }
 
-/* Override html5-qrcode internal styles for better mobile look */
-#scanner-reader video {
-  border-radius: var(--radius);
+.camera-container video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-#scanner-reader img {
-  display: none;
+.camera-target {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 80%;
+  height: 60px;
+  border: 2px solid rgba(26, 115, 232, 0.9);
+  border-radius: 8px;
+  box-shadow:
+    0 0 0 2000px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+}
+
+.ocr-status {
+  text-align: center;
+  padding: 12px;
 }
 
 .scanner-hint {
   text-align: center;
-  padding: 12px;
+  padding: 8px 12px;
   font-size: 0.875rem;
   color: var(--text-secondary);
   background: var(--surface);
