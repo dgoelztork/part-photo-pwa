@@ -9,7 +9,9 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
     "@types/papaparse": "^5.5.2",
+    "tailwindcss": "^4.2.2",
     "typescript": "~5.9.3",
     "vite": "^7.3.1",
     "vite-plugin-mkcert": "^1.17.9",
@@ -17,9 +19,15 @@
   },
   "dependencies": {
     "@azure/msal-browser": "^4.29.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "idb-keyval": "^6.2.2",
     "jszip": "^3.10.1",
     "papaparse": "^5.5.3",
-    "tesseract.js": "^7.0.0"
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.2",
+    "tesseract.js": "^7.0.0",
+    "zustand": "^5.0.12"
   }
 }

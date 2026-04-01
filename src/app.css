@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+/* Custom theme layer for warehouse-optimized palette */
+@theme {
+  --color-primary: #1a73e8;
+  --color-primary-dark: #1557b0;
+  --color-surface: #ffffff;
+  --color-bg: #f5f5f5;
+  --color-border: #dadce0;
+  --color-error: #d93025;
+  --color-success: #188038;
+  --color-warning: #f9ab00;
+  --color-text: #1f1f1f;
+  --color-text-secondary: #5f6368;
+}
+
+/* Base resets for mobile PWA */
+html, body {
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root {
+  height: 100%;
+}
+
+/* Prevent iOS zoom on input focus */
+input, select, textarea {
+  font-size: 16px;
+}
+
+/* Safe area support */
+.safe-top { padding-top: env(safe-area-inset-top, 0px); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+/* Touch optimized buttons */
+button { touch-action: manipulation; }
+
+/* Animations */
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-in { animation: slideIn 0.2s ease-out; }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.animate-pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }

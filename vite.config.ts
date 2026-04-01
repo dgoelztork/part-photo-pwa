@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import mkcert from "vite-plugin-mkcert";
+import tailwindcss from "@tailwindcss/vite";
 
 const base = process.env.GITHUB_PAGES ? "/part-photo-pwa/" : "/";
 
@@ -8,13 +9,14 @@ export default defineConfig({
   base,
   plugins: [
     mkcert(),
+    tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "icons/*.png"],
       manifest: {
-        name: "Part Photo Scanner",
-        short_name: "PartPhoto",
-        description: "Scan barcodes, capture and rename part photos",
+        name: "Part Receiving",
+        short_name: "Receiving",
+        description: "Warehouse receiving workflow with photo documentation",
         theme_color: "#1a73e8",
         background_color: "#ffffff",
         display: "standalone",
