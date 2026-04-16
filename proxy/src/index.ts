@@ -1,6 +1,9 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import https from "node:https";
+import fs from "node:fs";
+import path from "node:path";
 import { requireAuth } from "./middleware/auth.js";
 import authRoutes from "./routes/auth.js";
 import poRoutes from "./routes/purchase-orders.js";
@@ -28,10 +31,28 @@ app.use("/api/auth", authRoutes);
 app.use("/api/po", requireAuth, poRoutes);
 app.use("/api/grpo", requireAuth, grpoRoutes);
 
-// Start
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`[Proxy] Receiving proxy running on port ${PORT}`);
-  console.log(`[Proxy] SAP SL: ${process.env.SAP_SL_URL}`);
-  console.log(`[Proxy] Company DB: ${process.env.SAP_COMPANY_DB}`);
-  console.log(`[Proxy] CORS origins: ${origins.join(", ")}`);
-});
+// Start with HTTPS (self-signed cert) or HTTP
+const certDir = path.resolve(process.cwd(), "certs");
+const certFile = path.join(certDir, "cert.pem");
+const keyFile = path.join(certDir, "key.pem");
+
+if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
+  const sslOptions = {
+    cert: fs.readFileSync(certFile),
+    key: fs.readFileSync(keyFile),
+  };
+  https.createServer(sslOptions, app).listen(PORT, "0.0.0.0", () => {
+    console.log(`[Proxy] Receiving proxy running on HTTPS port ${PORT}`);
+    console.log(`[Proxy] SAP SL: ${process.env.SAP_SL_URL}`);
+    console.log(`[Proxy] Company DB: ${process.env.SAP_COMPANY_DB}`);
+    console.log(`[Proxy] CORS origins: ${origins.join(", ")}`);
+  });
+} else {
+  console.log("[Proxy] No certs found, starting HTTP (generate certs for HTTPS)");
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`[Proxy] Receiving proxy running on HTTP port ${PORT}`);
+    console.log(`[Proxy] SAP SL: ${process.env.SAP_SL_URL}`);
+    console.log(`[Proxy] Company DB: ${process.env.SAP_COMPANY_DB}`);
+    console.log(`[Proxy] CORS origins: ${origins.join(", ")}`);
+  });
+}
