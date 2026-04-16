@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSessionStore } from "../../stores/session-store";
 import { CONDITION_LABELS } from "../../types/session";
+import { postGRPO } from "../../services/api-client";
 
 export function ReviewSubmit() {
   const session = useSessionStore((s) => s.getActiveSession());
@@ -9,6 +10,8 @@ export function ReviewSubmit() {
   const setStatus = useSessionStore((s) => s.setStatus);
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [grpoDocNum, setGrpoDocNum] = useState<number | null>(null);
 
   if (!session) return null;
 
@@ -22,13 +25,46 @@ export function ReviewSubmit() {
     session.documents.length +
     session.lineItems.reduce((sum, l) => sum + l.photos.length, 0);
 
+  const poDocEntry = session.poDocEntry;
+
   const handleSubmit = async () => {
     setSubmitting(true);
-    // Phase 1: No SAP posting — just mark as submitted
-    await new Promise((r) => setTimeout(r, 1500)); // Simulate delay
-    setStatus("SUBMITTED");
-    setSubmitting(false);
-    navigate("/");
+    setSubmitError(null);
+
+    try {
+      if (poDocEntry) {
+        // Post GRPO to SAP via proxy
+        const grpoLines = confirmedLines
+          .filter((l) => l.receivedQty > 0)
+          .map((l) => ({
+            baseEntry: poDocEntry,
+            baseLine: l.lineNum,
+            itemCode: l.itemCode,
+            quantity: l.receivedQty,
+            warehouse: "01", // Default warehouse
+          }));
+
+        const result = await postGRPO({
+          vendorCode: session.vendorCode ?? "",
+          poDocEntry,
+          lines: grpoLines,
+        });
+
+        setGrpoDocNum(result.docNum);
+      }
+
+      setStatus("SUBMITTED");
+      if (!poDocEntry) {
+        // No SAP posting — just mark done
+        navigate("/");
+      }
+    } catch (err) {
+      setSubmitError(
+        err instanceof Error ? err.message : "Submission failed"
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -121,20 +157,46 @@ export function ReviewSubmit() {
         {totalPhotos} total photos captured
       </p>
 
+      {/* GRPO success */}
+      {grpoDocNum && (
+        <div className="p-4 rounded-xl bg-green-50 border border-green-200 text-center animate-slide-in">
+          <p className="text-lg font-bold text-success">GRPO Posted</p>
+          <p className="text-sm text-text-secondary">Document #{grpoDocNum}</p>
+          <button
+            onClick={() => navigate("/")}
+            className="mt-3 px-6 py-2 rounded-lg bg-primary text-white font-medium"
+          >
+            Done
+          </button>
+        </div>
+      )}
+
+      {/* Submit error */}
+      {submitError && (
+        <div className="p-4 rounded-xl bg-red-50 border border-red-200 animate-slide-in">
+          <p className="text-sm font-semibold text-error">Submission failed</p>
+          <p className="text-xs text-text-secondary mt-1">{submitError}</p>
+        </div>
+      )}
+
       {/* Submit */}
-      <div className="mt-auto pt-4 flex flex-col gap-2">
-        <button
-          onClick={handleSubmit}
-          disabled={submitting || confirmedLines.length === 0}
-          className="w-full py-4 rounded-xl bg-primary text-white font-semibold text-lg
-                     disabled:opacity-40 active:scale-[0.98] transition-transform"
-        >
-          {submitting ? "Submitting..." : "Submit Receiving"}
-        </button>
-        <p className="text-xs text-text-secondary text-center">
-          SAP GRPO posting will be available in Phase 2
-        </p>
-      </div>
+      {!grpoDocNum && (
+        <div className="mt-auto pt-4 flex flex-col gap-2">
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || confirmedLines.length === 0}
+            className="w-full py-4 rounded-xl bg-primary text-white font-semibold text-lg
+                       disabled:opacity-40 active:scale-[0.98] transition-transform"
+          >
+            {submitting ? "Posting to SAP..." : "Submit Receiving"}
+          </button>
+          {!poDocEntry && (
+            <p className="text-xs text-text-secondary text-center">
+              No SAP PO linked — session will be saved locally only
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

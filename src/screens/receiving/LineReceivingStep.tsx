@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useSessionStore } from "../../stores/session-store";
 import { StepHeader } from "../../components/layout/StepHeader";
 import { StepNavigation } from "../../components/layout/StepNavigation";
@@ -7,61 +7,10 @@ import { PhotoGallery } from "../../components/camera/PhotoGallery";
 import type { ReceivingLine, ItemCondition } from "../../types/session";
 import { CONDITION_LABELS } from "../../types/session";
 
-// Mock PO lines for Phase 1 (will come from SAP in Phase 2)
-const MOCK_LINES: ReceivingLine[] = [
-  {
-    lineNum: 0,
-    itemCode: "M1234567",
-    itemDescription: "Steel Rod 1/2 inch x 12ft",
-    orderedQty: 100,
-    previouslyReceivedQty: 0,
-    openQty: 100,
-    receivedQty: 100,
-    condition: "good",
-    notes: "",
-    photos: [],
-    confirmed: false,
-  },
-  {
-    lineNum: 1,
-    itemCode: "M7654321",
-    itemDescription: "Steel Plate 4x8 1/4in",
-    orderedQty: 50,
-    previouslyReceivedQty: 25,
-    openQty: 25,
-    receivedQty: 25,
-    condition: "good",
-    notes: "",
-    photos: [],
-    confirmed: false,
-  },
-  {
-    lineNum: 2,
-    itemCode: "M9876543",
-    itemDescription: "Aluminum Angle 2x2x1/4 6ft",
-    orderedQty: 200,
-    previouslyReceivedQty: 0,
-    openQty: 200,
-    receivedQty: 200,
-    condition: "good",
-    notes: "",
-    photos: [],
-    confirmed: false,
-  },
-];
-
 export function LineReceivingStep() {
   const session = useSessionStore((s) => s.getActiveSession());
-  const setLineItems = useSessionStore((s) => s.setLineItems);
   const goToStep = useSessionStore((s) => s.goToStep);
   const [selectedLine, setSelectedLine] = useState<number | null>(null);
-
-  // Initialize mock line items on first visit
-  useEffect(() => {
-    if (session && session.lineItems.length === 0) {
-      setLineItems(MOCK_LINES);
-    }
-  }, [session, setLineItems]);
 
   if (!session) return null;
 

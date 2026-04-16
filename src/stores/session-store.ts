@@ -40,6 +40,7 @@ interface SessionStore {
   addPackingSlipPhoto: (photo: CapturedPhoto) => void;
   removePackingSlipPhoto: (photoId: string) => void;
   setPoNumber: (poNumber: string) => void;
+  setPoData: (docEntry: number, vendorCode: string, vendorName: string) => void;
 
   // Step 4: Documents
   addDocument: (doc: CapturedDocument) => void;
@@ -221,6 +222,15 @@ export const useSessionStore = create<SessionStore>()(
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, () => ({
             poNumber,
+          })),
+        }));
+      },
+      setPoData: (docEntry: number, vendorCode: string, vendorName: string) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, () => ({
+            poDocEntry: docEntry,
+            vendorCode,
+            vendorName,
           })),
         }));
       },

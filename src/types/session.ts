@@ -63,6 +63,9 @@ export interface ReceivingSession {
   // Step 3: Packing Slip
   packingSlipPhotos: CapturedPhoto[];
   poNumber: string;
+  poDocEntry?: number;
+  vendorCode?: string;
+  vendorName?: string;
 
   // Step 4: Documents
   documents: CapturedDocument[];
