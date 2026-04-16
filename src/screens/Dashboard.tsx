@@ -1,7 +1,8 @@
-import type { MouseEvent } from "react";
+import { useState, type MouseEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/auth-store";
 import { useSessionStore } from "../stores/session-store";
+import { getProxyUrl, setProxyUrl, checkProxyHealth } from "../services/api-client";
 import type { ReceivingSession } from "../types/session";
 import { STEP_LABELS } from "../types/session";
 
@@ -9,6 +10,16 @@ export function Dashboard() {
   const { userName, signOut } = useAuthStore();
   const { sessions, createSession, resumeSession, deleteSession } = useSessionStore();
   const navigate = useNavigate();
+  const [showSettings, setShowSettings] = useState(false);
+  const [proxyUrlInput, setProxyUrlInput] = useState(getProxyUrl());
+  const [proxyStatus, setProxyStatus] = useState<"idle" | "checking" | "ok" | "error">("idle");
+
+  const handleCheckProxy = async () => {
+    setProxyUrl(proxyUrlInput);
+    setProxyStatus("checking");
+    const ok = await checkProxyHealth();
+    setProxyStatus(ok ? "ok" : "error");
+  };
 
   const handleNewSession = () => {
     const id = createSession(userName);
@@ -61,6 +72,46 @@ export function Dashboard() {
       >
         Start New Receiving Session
       </button>
+
+      {/* Settings toggle */}
+      <button
+        onClick={() => setShowSettings(!showSettings)}
+        className="text-sm text-text-secondary self-end -mt-2"
+      >
+        {showSettings ? "Hide Settings" : "Settings"}
+      </button>
+
+      {showSettings && (
+        <div className="bg-surface rounded-xl p-4 shadow-sm animate-slide-in flex flex-col gap-3">
+          <h3 className="text-sm font-medium text-text-secondary">Proxy Server</h3>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={proxyUrlInput}
+              onChange={(e) => {
+                setProxyUrlInput(e.target.value);
+                setProxyStatus("idle");
+              }}
+              placeholder="http://192.168.201.7:3001"
+              className="flex-1 p-3 rounded-lg border border-border text-sm"
+            />
+            <button
+              onClick={handleCheckProxy}
+              disabled={proxyStatus === "checking"}
+              className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium
+                         disabled:opacity-40 whitespace-nowrap"
+            >
+              {proxyStatus === "checking" ? "..." : "Test"}
+            </button>
+          </div>
+          {proxyStatus === "ok" && (
+            <p className="text-sm text-success">Connected to proxy</p>
+          )}
+          {proxyStatus === "error" && (
+            <p className="text-sm text-error">Cannot reach proxy at {proxyUrlInput}</p>
+          )}
+        </div>
+      )}
 
       {/* Today's sessions */}
       {todaySessions.length > 0 && (
