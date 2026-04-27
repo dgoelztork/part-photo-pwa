@@ -5,9 +5,8 @@
 
 import { getAccessToken } from "../lib/auth";
 
-// Default to localhost for dev; set via settings in production
 const PROXY_URL_KEY = "proxy-url";
-const DEFAULT_PROXY_URL = "https://localhost:3001";
+const DEFAULT_PROXY_URL = "https://tork-app.tail14e57a.ts.net:3001";
 
 let proxyJwt: string | null = null;
 

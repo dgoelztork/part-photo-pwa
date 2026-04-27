@@ -92,7 +92,7 @@ export function Dashboard() {
                 setProxyUrlInput(e.target.value);
                 setProxyStatus("idle");
               }}
-              placeholder="http://192.168.201.7:3001"
+              placeholder="https://tork-app.tail14e57a.ts.net:3001"
               className="flex-1 p-3 rounded-lg border border-border text-sm"
             />
             <button
