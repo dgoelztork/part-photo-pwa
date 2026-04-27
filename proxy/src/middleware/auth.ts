@@ -12,11 +12,37 @@ import jwt from "jsonwebtoken";
 import type { Request, Response, NextFunction } from "express";
 
 const JWT_SECRET = process.env.JWT_SECRET!;
+const EXPECTED_TID = process.env.AZURE_TENANT_ID!;
+const EXPECTED_APP_ID = process.env.AZURE_CLIENT_ID!;
+const ALLOWED_DOMAIN = (process.env.ALLOWED_EMAIL_DOMAIN ?? "").trim().toLowerCase();
+const ALLOWED_USERS = (process.env.ALLOWED_USERS ?? "")
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
 
-/** Validate an Azure AD access token by calling Graph /me with it. */
+function isEmailAllowed(email: string): boolean {
+  const lower = email.toLowerCase();
+  if (ALLOWED_USERS.includes(lower)) return true;
+  if (ALLOWED_DOMAIN && lower.endsWith(`@${ALLOWED_DOMAIN}`)) return true;
+  return false;
+}
+
+/** Validate an Azure AD access token: tenant/app match, then Graph for signature, then email allowlist. */
 export async function validateAzureToken(
   token: string
 ): Promise<{ email: string; name: string }> {
+  const claims = jwt.decode(token) as Record<string, string> | null;
+  if (!claims || typeof claims !== "object") {
+    throw new Error("Token is not a valid JWT");
+  }
+  if (claims.tid !== EXPECTED_TID) {
+    throw new Error(`Token tenant mismatch: ${claims.tid}`);
+  }
+  const tokenAppId = claims.appid ?? claims.azp;
+  if (tokenAppId !== EXPECTED_APP_ID) {
+    throw new Error(`Token app mismatch: ${tokenAppId}`);
+  }
+
   const res = await fetch("https://graph.microsoft.com/v1.0/me", {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -26,10 +52,14 @@ export async function validateAzureToken(
   }
 
   const profile = await res.json() as Record<string, string>;
-  return {
-    email: profile.userPrincipalName ?? profile.mail ?? "unknown",
-    name: profile.displayName ?? "User",
-  };
+  const email = profile.userPrincipalName ?? profile.mail ?? "unknown";
+  const name = profile.displayName ?? "User";
+
+  if (!isEmailAllowed(email)) {
+    throw new Error(`Email not authorized: ${email}`);
+  }
+
+  return { email, name };
 }
 
 /** Issue a proxy JWT from validated Azure AD identity. */

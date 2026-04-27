@@ -9,6 +9,30 @@ import authRoutes from "./routes/auth.js";
 import poRoutes from "./routes/purchase-orders.js";
 import grpoRoutes from "./routes/grpo.js";
 
+function requireConfig() {
+  const errors: string[] = [];
+  const secret = process.env.JWT_SECRET ?? "";
+  if (secret.length < 32) {
+    errors.push("JWT_SECRET missing or shorter than 32 chars");
+  }
+  if (/change[_-]?this|placeholder|your[_-]/i.test(secret)) {
+    errors.push("JWT_SECRET appears to be a placeholder; set a real random value");
+  }
+  if (!process.env.AZURE_TENANT_ID) errors.push("AZURE_TENANT_ID missing");
+  if (!process.env.AZURE_CLIENT_ID) errors.push("AZURE_CLIENT_ID missing");
+  const dom = (process.env.ALLOWED_EMAIL_DOMAIN ?? "").trim();
+  const users = (process.env.ALLOWED_USERS ?? "").trim();
+  if (!dom && !users) {
+    errors.push("Neither ALLOWED_EMAIL_DOMAIN nor ALLOWED_USERS set; refusing to authenticate everyone");
+  }
+  if (errors.length > 0) {
+    console.error("[Proxy] Refusing to start due to config errors:");
+    for (const e of errors) console.error(`  - ${e}`);
+    process.exit(1);
+  }
+}
+requireConfig();
+
 const app = express();
 const PORT = parseInt(process.env.PORT ?? "3001", 10);
 
