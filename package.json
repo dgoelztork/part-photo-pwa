@@ -24,6 +24,7 @@
     "idb-keyval": "^6.2.2",
     "jszip": "^3.10.1",
     "papaparse": "^5.5.3",
+    "pdf-lib": "^1.17.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.13.2",

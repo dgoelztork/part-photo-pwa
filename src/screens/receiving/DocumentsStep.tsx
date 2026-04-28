@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { useSessionStore } from "../../stores/session-store";
 import { StepHeader } from "../../components/layout/StepHeader";
 import { StepNavigation } from "../../components/layout/StepNavigation";
-import { CameraCapture } from "../../components/camera/CameraCapture";
+import { captureDocument, processDocumentCapture } from "../../services/photo-service";
 import type { CapturedPhoto, DocumentType } from "../../types/session";
 import { DOCUMENT_TYPE_LABELS } from "../../types/session";
 
@@ -15,9 +15,18 @@ export function DocumentsStep() {
 
   const [pendingPhoto, setPendingPhoto] = useState<CapturedPhoto | null>(null);
   const [selectedType, setSelectedType] = useState<DocumentType>("mtr");
+  const [capturing, setCapturing] = useState(false);
 
-  const handleCapture = useCallback((photo: CapturedPhoto) => {
-    setPendingPhoto(photo);
+  const handleCapture = useCallback(async () => {
+    const file = await captureDocument();
+    if (!file) return;
+    setCapturing(true);
+    try {
+      const photo = await processDocumentCapture(file);
+      setPendingPhoto(photo);
+    } finally {
+      setCapturing(false);
+    }
   }, []);
 
   const handleAddDocument = () => {
@@ -40,12 +49,22 @@ export function DocumentsStep() {
       <StepHeader currentStep="STEP_4" onBack={() => goToStep("STEP_3")} />
 
       <p className="text-sm text-text-secondary">
-        Photograph any MTRs, certificates, or documents included with the shipment.
+        Add MTRs, certificates, or other documents. On iPhone, tap{" "}
+        <span className="font-medium">Choose Files → Scan Documents</span> to use the
+        built-in scanner (recommended; supports multi-page). Or take a photo.
       </p>
 
       {!session.noDocuments && (
         <>
-          <CameraCapture onCapture={handleCapture} label="Photograph Document" />
+          <button
+            onClick={handleCapture}
+            disabled={capturing}
+            className="w-full py-4 rounded-xl bg-text text-white font-semibold text-base
+                       flex items-center justify-center gap-2
+                       active:scale-[0.98] transition-transform disabled:opacity-60"
+          >
+            {capturing ? "Processing…" : "Add Document"}
+          </button>
 
           {/* Pending photo — choose type */}
           {pendingPhoto && (

@@ -61,6 +61,7 @@ export async function downloadAsZip(
 interface UploadEntry {
   blob: Blob;
   filename: string;
+  contentType: string;
 }
 
 /** Format a Date as `YYYY-MM-DD_HH-MM-SS` (filename-safe, no colons or slashes). */
@@ -89,6 +90,7 @@ function buildUploadPlan(
       entries.push({
         blob: p.blob,
         filename: `${prefix}_${section}_${ts}${idxSuffix}.jpg`,
+        contentType: "image/jpeg",
       });
     });
   };
@@ -97,11 +99,14 @@ function buildUploadPlan(
   addGroup(session.labelPhotos, "SHIPPING_LABEL");
   addGroup(session.packingSlipPhotos, "PACKING_SLIP");
 
+  // Documents are stored as PDFs (either native scanner output or photo wrapped via pdf-lib).
   for (const doc of session.documents) {
     if (!doc.photo.blob || doc.photo.blob.size === 0) continue;
+    const isPdf = doc.photo.blob.type === "application/pdf";
     entries.push({
       blob: doc.photo.blob,
-      filename: `${prefix}_DOC_${doc.documentType.toUpperCase()}_${ts}.jpg`,
+      filename: `${prefix}_DOC_${doc.documentType.toUpperCase()}_${ts}.${isPdf ? "pdf" : "jpg"}`,
+      contentType: isPdf ? "application/pdf" : "image/jpeg",
     });
   }
 
@@ -113,6 +118,7 @@ function buildUploadPlan(
       entries.push({
         blob: p.blob,
         filename: `${prefix}_LINE_${String(line.lineNum).padStart(3, "0")}_${safeItem}_${ts}${idxSuffix}.jpg`,
+        contentType: "image/jpeg",
       });
     });
   }
@@ -139,7 +145,7 @@ export async function uploadReceivingSessionToSharePoint(
     const entry = entries[i];
     onProgress?.({ current: i + 1, total: entries.length, fileName: entry.filename });
     try {
-      await uploadFileToSharePoint(folder, entry.filename, entry.blob, "image/jpeg");
+      await uploadFileToSharePoint(folder, entry.filename, entry.blob, entry.contentType);
       uploaded++;
     } catch (err) {
       failed.push({
