@@ -1,9 +1,11 @@
-
+import { useState } from "react";
 import { useSessionStore } from "../../stores/session-store";
 import { StepHeader } from "../../components/layout/StepHeader";
 import { StepNavigation } from "../../components/layout/StepNavigation";
 import { CameraCapture } from "../../components/camera/CameraCapture";
 import { PhotoGallery } from "../../components/camera/PhotoGallery";
+import { extractShippingLabel } from "../../services/api-client";
+import type { CapturedPhoto } from "../../types/session";
 
 export function ShippingLabelStep() {
   const session = useSessionStore((s) => s.getActiveSession());
@@ -11,11 +13,34 @@ export function ShippingLabelStep() {
   const removePhoto = useSessionStore((s) => s.removeLabelPhoto);
   const updateInfo = useSessionStore((s) => s.updateShippingInfo);
   const goToStep = useSessionStore((s) => s.goToStep);
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
 
   if (!session) return null;
 
   const canProceed = session.labelPhotos.length >= 1;
   const info = session.shippingInfo;
+
+  // Auto-extract fields from the photo. Only fills in fields the user hasn't already typed,
+  // so a manual entry is never silently overwritten.
+  const handlePhotoCapture = async (photo: CapturedPhoto) => {
+    addPhoto(photo);
+    setExtractError(null);
+    setExtracting(true);
+    try {
+      const fields = await extractShippingLabel(photo.blob);
+      const patch: Partial<typeof info> = {};
+      if (fields.carrier && !info.carrier) patch.carrier = fields.carrier;
+      if (fields.trackingNumber && !info.trackingNumber) patch.trackingNumber = fields.trackingNumber;
+      if (fields.weight && !info.weight) patch.weight = fields.weight;
+      if (fields.shipFrom && !info.shipFrom) patch.shipFrom = fields.shipFrom;
+      if (Object.keys(patch).length > 0) updateInfo(patch);
+    } catch (err) {
+      setExtractError(err instanceof Error ? err.message : "Extraction failed");
+    } finally {
+      setExtracting(false);
+    }
+  };
 
   return (
     <div className="min-h-full flex flex-col gap-4 p-4 max-w-lg mx-auto safe-top safe-bottom">
@@ -25,9 +50,20 @@ export function ShippingLabelStep() {
         Photograph the shipping label clearly.
       </p>
 
-      <CameraCapture onCapture={addPhoto} label="Photograph Label" />
+      <CameraCapture onCapture={handlePhotoCapture} label="Photograph Label" />
 
       <PhotoGallery photos={session.labelPhotos} onDelete={removePhoto} />
+
+      {extracting && (
+        <p className="text-sm text-text-secondary text-center animate-pulse">
+          Reading label...
+        </p>
+      )}
+      {extractError && (
+        <p className="text-xs text-error text-center">
+          Couldn't auto-fill from photo ({extractError}). Enter fields manually below.
+        </p>
+      )}
 
       {/* Shipping info fields */}
       <div className="bg-surface rounded-xl p-4 shadow-sm flex flex-col gap-3">

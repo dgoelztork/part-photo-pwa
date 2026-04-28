@@ -146,3 +146,56 @@ export async function checkProxyHealth(): Promise<boolean> {
     return false;
   }
 }
+
+export interface ShippingLabelExtraction {
+  carrier: string | null;
+  trackingNumber: string | null;
+  weight: string | null;
+  shipFrom: string | null;
+}
+
+/** Send a shipping-label image to the proxy for OCR + structured extraction. */
+export async function extractShippingLabel(
+  image: Blob
+): Promise<ShippingLabelExtraction> {
+  const resized = await resizeForVision(image);
+  const dataUrl = await blobToDataUrl(resized);
+  const res = await proxyFetch("/api/extract/shipping-label", {
+    method: "POST",
+    body: JSON.stringify({ image: dataUrl }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Extraction failed" }));
+    throw new Error(err.message ?? `Extraction failed (${res.status})`);
+  }
+  return res.json();
+}
+
+/** Downscale to <= 1500px on the long edge and re-encode as JPEG. Keeps requests under Anthropic's per-image limits and reduces vision token cost. */
+async function resizeForVision(blob: Blob, maxDim = 1500): Promise<Blob> {
+  const img = await createImageBitmap(blob);
+  const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+  const w = Math.round(img.width * scale);
+  const h = Math.round(img.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(img, 0, 0, w, h);
+  return await new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error("Canvas toBlob returned null"))),
+      "image/jpeg",
+      0.85
+    );
+  });
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}

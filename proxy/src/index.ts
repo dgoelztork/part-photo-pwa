@@ -8,6 +8,7 @@ import { requireAuth } from "./middleware/auth.js";
 import authRoutes from "./routes/auth.js";
 import poRoutes from "./routes/purchase-orders.js";
 import grpoRoutes from "./routes/grpo.js";
+import extractRoutes from "./routes/extract.js";
 
 function requireConfig() {
   const errors: string[] = [];
@@ -54,6 +55,7 @@ app.use("/api/auth", authRoutes);
 // Protected routes
 app.use("/api/po", requireAuth, poRoutes);
 app.use("/api/grpo", requireAuth, grpoRoutes);
+app.use("/api/extract", requireAuth, extractRoutes);
 
 // JSON error handler — keeps body-parser failures from leaking stack traces as HTML.
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
