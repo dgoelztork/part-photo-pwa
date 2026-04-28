@@ -2,10 +2,10 @@ import { useState, useCallback } from "react";
 import { useSessionStore } from "../../stores/session-store";
 import { StepHeader } from "../../components/layout/StepHeader";
 import { StepNavigation } from "../../components/layout/StepNavigation";
-import { CameraCapture } from "../../components/camera/CameraCapture";
 import { PhotoGallery } from "../../components/camera/PhotoGallery";
+import { captureDocument, processDocumentCapture } from "../../services/photo-service";
 import { lookupPO, type POResult } from "../../services/api-client";
-import type { CapturedPhoto, ReceivingLine } from "../../types/session";
+import type { ReceivingLine } from "../../types/session";
 
 export function PackingSlipStep() {
   const session = useSessionStore((s) => s.getActiveSession());
@@ -19,27 +19,38 @@ export function PackingSlipStep() {
   const [poData, setPoData] = useState<POResult | null>(null);
   const [poError, setPoError] = useState<string | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
+  const [capturing, setCapturing] = useState(false);
 
-  const handleCapture = useCallback(
-    async (photo: CapturedPhoto) => {
-      addPhoto(photo);
-      setOcrStatus("Reading packing slip...");
-      try {
-        const { recognizePartNumber } = await import("../../lib/ocr-reader");
-        const result = await recognizePartNumber(photo.blob);
-        if (result) {
-          setPoNumber(result);
-          setOcrStatus(`Found: ${result}`);
-        } else {
-          setOcrStatus("No PO number detected — enter manually below");
+  // Capture flow accepts photos OR scanner-produced PDFs. OCR runs on images only;
+  // multi-page scans skip OCR (Tesseract can't read PDFs in-browser without PDF.js).
+  const handleCapture = useCallback(async () => {
+    const file = await captureDocument();
+    if (!file) return;
+    setCapturing(true);
+    try {
+      const isImage = file.type !== "application/pdf";
+      if (isImage) {
+        setOcrStatus("Reading packing slip...");
+        try {
+          const { recognizePartNumber } = await import("../../lib/ocr-reader");
+          const result = await recognizePartNumber(file);
+          if (result) {
+            setPoNumber(result);
+            setOcrStatus(`Found: ${result}`);
+          } else {
+            setOcrStatus("No PO number detected — enter manually below");
+          }
+        } catch {
+          setOcrStatus("OCR unavailable — enter PO number manually");
         }
-      } catch {
-        setOcrStatus("OCR unavailable — enter PO number manually");
+        setTimeout(() => setOcrStatus(null), 3000);
       }
-      setTimeout(() => setOcrStatus(null), 3000);
-    },
-    [addPhoto, setPoNumber]
-  );
+      const photo = await processDocumentCapture(file);
+      addPhoto(photo);
+    } finally {
+      setCapturing(false);
+    }
+  }, [addPhoto, setPoNumber]);
 
   const handleLookupPO = useCallback(async () => {
     if (!session?.poNumber.trim()) return;
@@ -86,10 +97,20 @@ export function PackingSlipStep() {
       <StepHeader currentStep="STEP_3" onBack={() => goToStep("STEP_2")} />
 
       <p className="text-sm text-text-secondary">
-        Photograph each page of the packing slip. The PO number will be extracted automatically.
+        Capture the packing slip. On iPhone, tap{" "}
+        <span className="font-medium">Choose Files → Scan Documents</span> for a clean
+        multi-page PDF, or take a photo for instant PO-number OCR.
       </p>
 
-      <CameraCapture onCapture={handleCapture} label="Photograph Packing Slip" />
+      <button
+        onClick={handleCapture}
+        disabled={capturing}
+        className="w-full py-4 rounded-xl bg-text text-white font-semibold text-base
+                   flex items-center justify-center gap-2
+                   active:scale-[0.98] transition-transform disabled:opacity-60"
+      >
+        {capturing ? "Processing…" : "Add Packing Slip"}
+      </button>
 
       {ocrStatus && (
         <p className="text-center text-sm text-text-secondary animate-pulse-dot">

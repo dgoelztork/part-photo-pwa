@@ -83,14 +83,20 @@ function buildUploadPlan(
   const entries: UploadEntry[] = [];
   const prefix = `PO${po}`;
 
+  // Per-blob extension/MIME — any section can carry PDFs (packing slip, documents) or
+  // JPEGs (box, shipping label, line photos). Detect from blob type, not section.
+  const extFor = (blob: Blob) => (blob.type === "application/pdf" ? "pdf" : "jpg");
+  const mimeFor = (blob: Blob) =>
+    blob.type === "application/pdf" ? "application/pdf" : "image/jpeg";
+
   const addGroup = (photos: SessionPhoto[], section: string) => {
     photos.forEach((p, i) => {
       if (!p.blob || p.blob.size === 0) return; // skip stripped/persisted-empty blobs
       const idxSuffix = photos.length > 1 ? `_${String(i + 1).padStart(2, "0")}` : "";
       entries.push({
         blob: p.blob,
-        filename: `${prefix}_${section}_${ts}${idxSuffix}.jpg`,
-        contentType: "image/jpeg",
+        filename: `${prefix}_${section}_${ts}${idxSuffix}.${extFor(p.blob)}`,
+        contentType: mimeFor(p.blob),
       });
     });
   };
@@ -99,14 +105,12 @@ function buildUploadPlan(
   addGroup(session.labelPhotos, "SHIPPING_LABEL");
   addGroup(session.packingSlipPhotos, "PACKING_SLIP");
 
-  // Documents are stored as PDFs (either native scanner output or photo wrapped via pdf-lib).
   for (const doc of session.documents) {
     if (!doc.photo.blob || doc.photo.blob.size === 0) continue;
-    const isPdf = doc.photo.blob.type === "application/pdf";
     entries.push({
       blob: doc.photo.blob,
-      filename: `${prefix}_DOC_${doc.documentType.toUpperCase()}_${ts}.${isPdf ? "pdf" : "jpg"}`,
-      contentType: isPdf ? "application/pdf" : "image/jpeg",
+      filename: `${prefix}_DOC_${doc.documentType.toUpperCase()}_${ts}.${extFor(doc.photo.blob)}`,
+      contentType: mimeFor(doc.photo.blob),
     });
   }
 
@@ -117,8 +121,8 @@ function buildUploadPlan(
       const idxSuffix = line.photos.length > 1 ? `_${String(i + 1).padStart(2, "0")}` : "";
       entries.push({
         blob: p.blob,
-        filename: `${prefix}_LINE_${String(line.lineNum).padStart(3, "0")}_${safeItem}_${ts}${idxSuffix}.jpg`,
-        contentType: "image/jpeg",
+        filename: `${prefix}_LINE_${String(line.lineNum).padStart(3, "0")}_${safeItem}_${ts}${idxSuffix}.${extFor(p.blob)}`,
+        contentType: mimeFor(p.blob),
       });
     });
   }
