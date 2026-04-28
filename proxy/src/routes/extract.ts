@@ -41,16 +41,22 @@ router.post("/shipping-label", async (req, res) => {
   const mediaType = match[1] as "image/jpeg" | "image/png" | "image/webp" | "image/gif";
   const data = match[2];
 
+  const user = (req as any).user as { email?: string } | undefined;
+  const sizeKb = Math.round((data.length * 3) / 4 / 1024); // base64 → bytes → KB
+  const t0 = Date.now();
   try {
     const result = await extractShippingLabel(data, mediaType);
-    const user = (req as any).user as { email?: string } | undefined;
+    const ms = Date.now() - t0;
     console.log(
-      `[Extract] Shipping label for ${user?.email ?? "unknown"}: ` +
-        `carrier=${result.carrier ?? "-"}, tracking=${result.trackingNumber ?? "-"}`
+      `[Extract] Shipping label for ${user?.email ?? "unknown"} ` +
+        `(${sizeKb}KB image, ${ms}ms): ` +
+        `carrier=${result.carrier ?? "-"}, tracking=${result.trackingNumber ?? "-"}, ` +
+        `speed=${result.shippingSpeed ?? "-"}, weight=${result.weight ?? "-"}, zip=${result.shipFrom ?? "-"}`
     );
     res.json(result);
   } catch (err) {
-    console.error("[Extract] Shipping label extraction failed:", err);
+    const ms = Date.now() - t0;
+    console.error(`[Extract] Shipping label extraction failed after ${ms}ms (${sizeKb}KB image):`, err);
     res.status(502).json({
       error: "EXTRACTION_FAILED",
       message: err instanceof Error ? err.message : "Unknown error",

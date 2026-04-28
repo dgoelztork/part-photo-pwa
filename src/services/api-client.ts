@@ -172,8 +172,8 @@ export async function extractShippingLabel(
   return res.json();
 }
 
-/** Downscale to <= 1500px on the long edge and re-encode as JPEG. Keeps requests under Anthropic's per-image limits and reduces vision token cost. */
-async function resizeForVision(blob: Blob, maxDim = 1500): Promise<Blob> {
+/** Downscale to <= 1024px on the long edge and re-encode as JPEG. 1024 is plenty for shipping-label OCR and roughly halves both upload time and vision token cost vs 1500. */
+async function resizeForVision(blob: Blob, maxDim = 1024): Promise<Blob> {
   const img = await createImageBitmap(blob);
   const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
   const w = Math.round(img.width * scale);
@@ -187,7 +187,7 @@ async function resizeForVision(blob: Blob, maxDim = 1500): Promise<Blob> {
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(new Error("Canvas toBlob returned null"))),
       "image/jpeg",
-      0.85
+      0.75
     );
   });
 }
