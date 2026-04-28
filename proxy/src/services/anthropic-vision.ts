@@ -113,3 +113,44 @@ export async function extractShippingLabel(
   }
   return toolUse.input as ShippingLabelExtraction;
 }
+
+const TRANSCRIBE_SYSTEM = `You transcribe documents from photographs for archival search.
+
+Output rules:
+- Return only the visible text from the image, top-to-bottom, left-to-right.
+- Preserve line breaks where they appear on the page.
+- Include all text: labels, addresses, numbers, dates, reference codes, fine print.
+- For barcodes you can read, write "[barcode: <value>]"; for ones you can't, write "[barcode]".
+- For signatures or illegible marks, write "[signature]" or "[illegible]".
+- Handle any orientation — the document may be rotated.
+- Do not add commentary, summaries, descriptions, or markdown formatting.
+- Output is plain text only.`;
+
+/** Extract a flat text transcription of a document image, suitable for embedding as a hidden PDF text layer. */
+export async function transcribeDocument(
+  imageBase64: string,
+  mediaType: "image/jpeg" | "image/png" | "image/webp" | "image/gif"
+): Promise<string> {
+  const response = await getClient().messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 4096,
+    system: [
+      { type: "text", text: TRANSCRIBE_SYSTEM, cache_control: { type: "ephemeral" } },
+    ],
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: imageBase64 } },
+          { type: "text", text: "Transcribe this document." },
+        ],
+      },
+    ],
+  });
+  const text = response.content
+    .filter((b): b is Anthropic.TextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("\n")
+    .trim();
+  return text;
+}

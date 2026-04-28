@@ -172,6 +172,26 @@ export async function extractShippingLabel(
   return res.json();
 }
 
+/**
+ * Send a document image to the proxy for full-text OCR transcription.
+ * Returns the visible text in the image as a single string. Used to add a
+ * hidden, searchable text layer to the PDF before upload.
+ */
+export async function transcribeDocument(image: Blob): Promise<string> {
+  const resized = await resizeForVision(image);
+  const dataUrl = await blobToDataUrl(resized);
+  const res = await proxyFetch("/api/extract/document-text", {
+    method: "POST",
+    body: JSON.stringify({ image: dataUrl }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Transcription failed" }));
+    throw new Error(err.message ?? `Transcription failed (${res.status})`);
+  }
+  const data = await res.json();
+  return typeof data.text === "string" ? data.text : "";
+}
+
 /** Downscale to <= 1024px on the long edge and re-encode as JPEG. 1024 is plenty for shipping-label OCR and roughly halves both upload time and vision token cost vs 1500. */
 async function resizeForVision(blob: Blob, maxDim = 1024): Promise<Blob> {
   const img = await createImageBitmap(blob);
