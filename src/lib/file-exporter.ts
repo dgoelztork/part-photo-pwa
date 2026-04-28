@@ -1,5 +1,7 @@
-import { uploadFile } from "./graph-client";
+import { uploadFile, uploadFileToSharePoint } from "./graph-client";
+import { RECEIVING_SHAREPOINT_PATH } from "../config";
 import type { CapturedPhoto } from "../types";
+import type { ReceivingSession, CapturedPhoto as SessionPhoto } from "../types/session";
 import JSZip from "jszip";
 
 export interface UploadProgress {
@@ -52,6 +54,102 @@ export async function downloadAsZip(
     a.remove();
     URL.revokeObjectURL(url);
   }, 1000);
+}
+
+// ---- Receiving session SharePoint upload ----
+
+interface UploadEntry {
+  blob: Blob;
+  filename: string;
+}
+
+/** Format a Date as `YYYY-MM-DD_HH-MM-SS` (filename-safe, no colons or slashes). */
+function fmtTimestamp(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+}
+
+/** Build the (folder, files[]) plan for a receiving session at a given timestamp. */
+function buildUploadPlan(
+  session: ReceivingSession,
+  uploadedAt: Date
+): { folder: string; entries: UploadEntry[] } {
+  const ts = fmtTimestamp(uploadedAt);
+  const po = session.poNumber || "NOPO";
+  const folder = `${RECEIVING_SHAREPOINT_PATH}/PO${po} - ${ts.replace("_", " ")}`;
+
+  const entries: UploadEntry[] = [];
+  const prefix = `PO${po}`;
+
+  const addGroup = (photos: SessionPhoto[], section: string) => {
+    photos.forEach((p, i) => {
+      if (!p.blob || p.blob.size === 0) return; // skip stripped/persisted-empty blobs
+      const idxSuffix = photos.length > 1 ? `_${String(i + 1).padStart(2, "0")}` : "";
+      entries.push({
+        blob: p.blob,
+        filename: `${prefix}_${section}_${ts}${idxSuffix}.jpg`,
+      });
+    });
+  };
+
+  addGroup(session.boxPhotos, "BOX");
+  addGroup(session.labelPhotos, "SHIPPING_LABEL");
+  addGroup(session.packingSlipPhotos, "PACKING_SLIP");
+
+  for (const doc of session.documents) {
+    if (!doc.photo.blob || doc.photo.blob.size === 0) continue;
+    entries.push({
+      blob: doc.photo.blob,
+      filename: `${prefix}_DOC_${doc.documentType.toUpperCase()}_${ts}.jpg`,
+    });
+  }
+
+  for (const line of session.lineItems) {
+    const safeItem = line.itemCode.replace(/[^A-Za-z0-9_-]/g, "");
+    line.photos.forEach((p, i) => {
+      if (!p.blob || p.blob.size === 0) return;
+      const idxSuffix = line.photos.length > 1 ? `_${String(i + 1).padStart(2, "0")}` : "";
+      entries.push({
+        blob: p.blob,
+        filename: `${prefix}_LINE_${String(line.lineNum).padStart(3, "0")}_${safeItem}_${ts}${idxSuffix}.jpg`,
+      });
+    });
+  }
+
+  return { folder, entries };
+}
+
+export interface ReceivingUploadResult {
+  uploaded: number;
+  failed: { filename: string; error: string }[];
+  folder: string;
+}
+
+/** Upload all photos in a receiving session to SharePoint, organized by PO + datetime. */
+export async function uploadReceivingSessionToSharePoint(
+  session: ReceivingSession,
+  onProgress?: (progress: UploadProgress) => void
+): Promise<ReceivingUploadResult> {
+  const { folder, entries } = buildUploadPlan(session, new Date());
+  const failed: { filename: string; error: string }[] = [];
+  let uploaded = 0;
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    onProgress?.({ current: i + 1, total: entries.length, fileName: entry.filename });
+    try {
+      await uploadFileToSharePoint(folder, entry.filename, entry.blob, "image/jpeg");
+      uploaded++;
+    } catch (err) {
+      failed.push({
+        filename: entry.filename,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return { uploaded, failed, folder };
 }
 
 /** Try sharing photos via Web Share API (additional fallback). */

@@ -12,9 +12,15 @@ export const MSAL_CONFIG = {
   },
 };
 
-export const GRAPH_SCOPES = ["Files.ReadWrite", "User.Read"];
+// Files.ReadWrite.All is required to write to SharePoint sites the user can access.
+// User-delegated, so users still only see/write files they're already authorized for.
+export const GRAPH_SCOPES = ["Files.ReadWrite.All", "User.Read"];
 export const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
 
 // Default OneDrive paths (user can change in settings)
 export const DEFAULT_CSV_PATH = "/Parts Photos/parts-catalog.csv";
 export const DEFAULT_PHOTO_FOLDER = "/Parts Photos";
+
+// SharePoint destination for receiving photo evidence (folder created per PO+datetime).
+export const RECEIVING_SHAREPOINT_HOST = "torksys.sharepoint.com";
+export const RECEIVING_SHAREPOINT_PATH = "05 - Operations/05.2 Warehouse/Receiving Docs";

@@ -3,6 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { useSessionStore } from "../../stores/session-store";
 import { CONDITION_LABELS } from "../../types/session";
 import { postGRPO } from "../../services/api-client";
+import {
+  uploadReceivingSessionToSharePoint,
+  type ReceivingUploadResult,
+  type UploadProgress,
+} from "../../lib/file-exporter";
 
 export function ReviewSubmit() {
   const session = useSessionStore((s) => s.getActiveSession());
@@ -12,6 +17,8 @@ export function ReviewSubmit() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [grpoDocNum, setGrpoDocNum] = useState<number | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const [uploadResult, setUploadResult] = useState<ReceivingUploadResult | null>(null);
 
   if (!session) return null;
 
@@ -53,9 +60,24 @@ export function ReviewSubmit() {
         setGrpoDocNum(result.docNum);
       }
 
+      // Upload photo evidence to SharePoint. Failure here does not invalidate
+      // the GRPO that just posted to SAP — surface but don't block.
+      try {
+        const result = await uploadReceivingSessionToSharePoint(session, setUploadProgress);
+        setUploadResult(result);
+      } catch (err) {
+        setUploadResult({
+          uploaded: 0,
+          failed: [{ filename: "(upload aborted)", error: err instanceof Error ? err.message : String(err) }],
+          folder: "",
+        });
+      } finally {
+        setUploadProgress(null);
+      }
+
       setStatus("SUBMITTED");
       if (!poDocEntry) {
-        // No SAP posting — just mark done
+        // No SAP posting — just mark done after upload attempt
         navigate("/");
       }
     } catch (err) {
@@ -157,11 +179,32 @@ export function ReviewSubmit() {
         {totalPhotos} total photos captured
       </p>
 
+      {/* Upload progress */}
+      {uploadProgress && (
+        <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 animate-slide-in">
+          <p className="text-sm font-medium text-text">
+            Uploading photos to SharePoint ({uploadProgress.current}/{uploadProgress.total})
+          </p>
+          <p className="text-xs text-text-secondary truncate mt-1">{uploadProgress.fileName}</p>
+        </div>
+      )}
+
       {/* GRPO success */}
-      {grpoDocNum && (
+      {grpoDocNum && !uploadProgress && (
         <div className="p-4 rounded-xl bg-green-50 border border-green-200 text-center animate-slide-in">
           <p className="text-lg font-bold text-success">GRPO Posted</p>
           <p className="text-sm text-text-secondary">Document #{grpoDocNum}</p>
+          {uploadResult && uploadResult.failed.length === 0 && (
+            <p className="text-xs text-text-secondary mt-2">
+              {uploadResult.uploaded} photo{uploadResult.uploaded !== 1 ? "s" : ""} uploaded to SharePoint
+            </p>
+          )}
+          {uploadResult && uploadResult.failed.length > 0 && (
+            <p className="text-xs text-error mt-2">
+              {uploadResult.uploaded} uploaded, {uploadResult.failed.length} failed —
+              {" "}{uploadResult.failed[0].error}
+            </p>
+          )}
           <button
             onClick={() => navigate("/")}
             className="mt-3 px-6 py-2 rounded-lg bg-primary text-white font-medium"
