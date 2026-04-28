@@ -4,7 +4,7 @@ import {
   type AccountInfo,
   InteractionRequiredAuthError,
 } from "@azure/msal-browser";
-import { MSAL_CONFIG, GRAPH_SCOPES } from "../config";
+import { MSAL_CONFIG, GRAPH_SCOPES, TENANT_DOMAIN_HINT } from "../config";
 
 let msalInstance: PublicClientApplication | null = null;
 
@@ -41,13 +41,14 @@ export async function signIn(): Promise<AccountInfo | null> {
 
   // Use redirect flow on iOS (popups are blocked in standalone PWA mode)
   if (isIOSStandalone()) {
-    await msal.loginRedirect({ scopes: GRAPH_SCOPES });
+    await msal.loginRedirect({ scopes: GRAPH_SCOPES, domainHint: TENANT_DOMAIN_HINT });
     return null; // Page will redirect
   }
 
   try {
     const result: AuthenticationResult = await msal.loginPopup({
       scopes: GRAPH_SCOPES,
+      domainHint: TENANT_DOMAIN_HINT,
     });
     if (result.account) {
       msal.setActiveAccount(result.account);
@@ -55,7 +56,7 @@ export async function signIn(): Promise<AccountInfo | null> {
     return result.account;
   } catch {
     // Fallback to redirect if popup fails
-    await msal.loginRedirect({ scopes: GRAPH_SCOPES });
+    await msal.loginRedirect({ scopes: GRAPH_SCOPES, domainHint: TENANT_DOMAIN_HINT });
     return null;
   }
 }
@@ -87,12 +88,17 @@ export async function getAccessToken(): Promise<string> {
   } catch (error) {
     if (error instanceof InteractionRequiredAuthError) {
       if (isIOSStandalone()) {
-        await msal.acquireTokenRedirect({ scopes: GRAPH_SCOPES, account });
+        await msal.acquireTokenRedirect({
+          scopes: GRAPH_SCOPES,
+          account,
+          domainHint: TENANT_DOMAIN_HINT,
+        });
         throw new Error("Redirecting for authentication...");
       }
       const result = await msal.acquireTokenPopup({
         scopes: GRAPH_SCOPES,
         account,
+        domainHint: TENANT_DOMAIN_HINT,
       });
       return result.accessToken;
     }

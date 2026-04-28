@@ -17,6 +17,12 @@ export const MSAL_CONFIG = {
 export const GRAPH_SCOPES = ["Files.ReadWrite.All", "User.Read"];
 export const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
 
+// Skip the email-typing + tenant-detection step at sign-in. With this set,
+// Microsoft routes directly to Tork SSO and never offers the personal-account
+// (live.com) flow — important for fresh cookie jars (home-screen PWA, new
+// devices, private browsing).
+export const TENANT_DOMAIN_HINT = "torksystems.com";
+
 // Default OneDrive paths (user can change in settings)
 export const DEFAULT_CSV_PATH = "/Parts Photos/parts-catalog.csv";
 export const DEFAULT_PHOTO_FOLDER = "/Parts Photos";
