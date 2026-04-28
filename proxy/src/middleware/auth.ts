@@ -9,7 +9,6 @@
  */
 
 import jwt from "jsonwebtoken";
-import { createRemoteJWKSet, jwtVerify } from "jose";
 import type { Request, Response, NextFunction } from "express";
 
 const JWT_SECRET = process.env.JWT_SECRET!;
@@ -21,18 +20,6 @@ const ALLOWED_USERS = (process.env.ALLOWED_USERS ?? "")
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
 
-// Microsoft's docs caution against validating access tokens for APIs you don't own
-// (Graph). The architecturally correct fix is to register this proxy as its own API in
-// Azure AD and have the PWA request tokens for that audience. Until that's done, we
-// validate the v2.0 Graph-scoped access token locally; works for current MSAL flows.
-const JWKS = createRemoteJWKSet(
-  new URL(`https://login.microsoftonline.com/${EXPECTED_TID}/discovery/v2.0/keys`)
-);
-const ISSUERS = [
-  `https://login.microsoftonline.com/${EXPECTED_TID}/v2.0`,
-  `https://sts.windows.net/${EXPECTED_TID}/`,
-];
-
 function isEmailAllowed(email: string): boolean {
   const lower = email.toLowerCase();
   if (ALLOWED_USERS.includes(lower)) return true;
@@ -40,22 +27,33 @@ function isEmailAllowed(email: string): boolean {
   return false;
 }
 
-/** Validate an Azure AD access token: signature/issuer/expiry via JWKS, then tenant/app/email checks. */
+/** Validate an Azure AD access token: tenant/app match, then Graph for signature, then email allowlist. */
 export async function validateAzureToken(
   token: string
 ): Promise<{ email: string; name: string }> {
-  const { payload } = await jwtVerify(token, JWKS, { issuer: ISSUERS });
-
-  if (payload.tid !== EXPECTED_TID) {
-    throw new Error(`Token tenant mismatch: ${payload.tid}`);
+  const claims = jwt.decode(token) as Record<string, string> | null;
+  if (!claims || typeof claims !== "object") {
+    throw new Error("Token is not a valid JWT");
   }
-  const tokenAppId = (payload.appid ?? payload.azp) as string | undefined;
+  if (claims.tid !== EXPECTED_TID) {
+    throw new Error(`Token tenant mismatch: ${claims.tid}`);
+  }
+  const tokenAppId = claims.appid ?? claims.azp;
   if (tokenAppId !== EXPECTED_APP_ID) {
     throw new Error(`Token app mismatch: ${tokenAppId}`);
   }
 
-  const email = (payload.preferred_username ?? payload.upn ?? payload.email ?? "unknown") as string;
-  const name = (payload.name ?? "User") as string;
+  const res = await fetch("https://graph.microsoft.com/v1.0/me", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Token validation failed: Graph returned ${res.status}`);
+  }
+
+  const profile = await res.json() as Record<string, string>;
+  const email = profile.userPrincipalName ?? profile.mail ?? "unknown";
+  const name = profile.displayName ?? "User";
 
   if (!isEmailAllowed(email)) {
     throw new Error(`Email not authorized: ${email}`);

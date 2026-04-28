@@ -55,20 +55,6 @@ app.use("/api/auth", authRoutes);
 app.use("/api/po", requireAuth, poRoutes);
 app.use("/api/grpo", requireAuth, grpoRoutes);
 
-// JSON error handler — keeps body-parser failures from leaking stack traces as HTML.
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  if (err?.type === "entity.parse.failed") {
-    res.status(400).json({ error: "INVALID_JSON", message: "Request body is not valid JSON" });
-    return;
-  }
-  if (err?.type === "entity.too.large") {
-    res.status(413).json({ error: "PAYLOAD_TOO_LARGE", message: "Request body exceeds limit" });
-    return;
-  }
-  console.error("[Proxy] Unhandled error:", err);
-  res.status(500).json({ error: "INTERNAL", message: "Internal server error" });
-});
-
 // Start with HTTPS (self-signed cert) or HTTP
 const certDir = path.resolve(process.cwd(), "certs");
 const certFile = path.join(certDir, "cert.pem");
