@@ -152,6 +152,7 @@ export interface ShippingLabelExtraction {
   trackingNumber: string | null;
   weight: string | null;
   shipFrom: string | null;
+  shippingSpeed: string | null;
 }
 
 /** Send a shipping-label image to the proxy for OCR + structured extraction. */

@@ -69,7 +69,7 @@ function createEmptySession(userName: string): ReceivingSession {
     boxDamaged: false,
     boxDamageNotes: "",
     labelPhotos: [],
-    shippingInfo: { carrier: "", trackingNumber: "", weight: "", shipFrom: "" },
+    shippingInfo: { carrier: "", trackingNumber: "", weight: "", shipFrom: "", shippingSpeed: "" },
     packingSlipPhotos: [],
     poNumber: "",
     documents: [],

@@ -34,6 +34,7 @@ export function ShippingLabelStep() {
       if (fields.trackingNumber && !info.trackingNumber) patch.trackingNumber = fields.trackingNumber;
       if (fields.weight && !info.weight) patch.weight = fields.weight;
       if (fields.shipFrom && !info.shipFrom) patch.shipFrom = fields.shipFrom;
+      if (fields.shippingSpeed && !info.shippingSpeed) patch.shippingSpeed = fields.shippingSpeed;
       if (Object.keys(patch).length > 0) updateInfo(patch);
     } catch (err) {
       setExtractError(err instanceof Error ? err.message : "Extraction failed");
@@ -83,19 +84,28 @@ export function ShippingLabelStep() {
           placeholder="Tracking number"
           className="w-full p-3 rounded-lg border border-border text-base"
         />
+        <input
+          type="text"
+          value={info.shippingSpeed}
+          onChange={(e) => updateInfo({ shippingSpeed: e.target.value })}
+          placeholder="Shipping speed (e.g. Ground, Next Day Air)"
+          className="w-full p-3 rounded-lg border border-border text-base"
+        />
         <div className="flex gap-2">
           <input
             type="text"
             value={info.weight}
             onChange={(e) => updateInfo({ weight: e.target.value })}
-            placeholder="Weight"
+            placeholder="Weight (lbs)"
+            inputMode="decimal"
             className="flex-1 p-3 rounded-lg border border-border text-base"
           />
           <input
             type="text"
             value={info.shipFrom}
             onChange={(e) => updateInfo({ shipFrom: e.target.value })}
-            placeholder="Ship from"
+            placeholder="Ship-from ZIP"
+            inputMode="numeric"
             className="flex-1 p-3 rounded-lg border border-border text-base"
           />
         </div>

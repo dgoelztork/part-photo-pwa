@@ -11,6 +11,7 @@ export interface ShippingLabelExtraction {
   trackingNumber: string | null;
   weight: string | null;
   shipFrom: string | null;
+  shippingSpeed: string | null;
 }
 
 let client: Anthropic | null = null;
@@ -62,15 +63,26 @@ export async function extractShippingLabel(
             weight: {
               type: ["string", "null"],
               description:
-                "Weight as printed, including units, e.g. '5.2 LBS', '12 oz', '2.4 kg'. Null if not visible.",
+                "Weight in POUNDS only, formatted as a number followed by ' LBS' (e.g. '5.2 LBS'). " +
+                "If the label shows a different unit, convert: 1 kg = 2.205 LBS, 16 oz = 1 LBS. " +
+                "Round to one decimal place. Null if not visible.",
             },
             shipFrom: {
               type: ["string", "null"],
               description:
-                "Sender identifier — company name and/or city/state. One short line. Null if not visible.",
+                "Sender's 5-digit US ZIP code (or ZIP+4) from the ship-from address block. " +
+                "Just the ZIP digits, no city/state/company name. Examples: '90210', '10001-1234'. " +
+                "Null if no ZIP is visible. International postal codes also acceptable if no US ZIP exists.",
+            },
+            shippingSpeed: {
+              type: ["string", "null"],
+              description:
+                "Service level / shipping speed as printed on the label. Examples: 'Ground', " +
+                "'2-Day', 'Next Day Air', 'Priority Overnight', 'Standard Overnight', 'Express Saver', " +
+                "'Priority Mail', 'First Class'. Use the exact phrase from the label. Null if not visible.",
             },
           },
-          required: ["carrier", "trackingNumber", "weight", "shipFrom"],
+          required: ["carrier", "trackingNumber", "weight", "shipFrom", "shippingSpeed"],
           additionalProperties: false,
         },
       },

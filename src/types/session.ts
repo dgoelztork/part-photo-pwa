@@ -29,6 +29,7 @@ export interface ShippingInfo {
   trackingNumber: string;
   weight: string;
   shipFrom: string;
+  shippingSpeed: string;
 }
 
 export interface ReceivingLine {
