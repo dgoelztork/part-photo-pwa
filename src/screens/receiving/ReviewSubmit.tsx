@@ -1,13 +1,71 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSessionStore } from "../../stores/session-store";
-import { CONDITION_LABELS } from "../../types/session";
+import { CONDITION_LABELS, type ReceivingSession } from "../../types/session";
 import { postGRPO } from "../../services/api-client";
 import {
   uploadReceivingSessionToSharePoint,
   type ReceivingUploadResult,
   type UploadProgress,
 } from "../../lib/file-exporter";
+
+/**
+ * Build the catch-all string written to OPDN.U_GoodsReturnComment. Anything
+ * the receiver entered that doesn't have its own SAP destination today
+ * (carrier choice, edited shipping details, box damage, line exceptions, etc.)
+ * lands here. Format is plain-text section blocks, easy to read in SAP.
+ */
+function buildGoodsReturnComment(session: ReceivingSession): string {
+  const sections: string[] = [];
+
+  if (session.boxDamaged) {
+    const note = session.boxDamageNotes.trim();
+    sections.push(`[BOX] Damaged${note ? ` — ${note}` : ""}`);
+  }
+
+  if (session.carrier) {
+    sections.push(`[CARRIER] ${session.carrier}`);
+  }
+
+  const sd = session.shippingDetails;
+  const sdParts = [
+    sd.transpCode && `transp=${sd.transpCode}`,
+    sd.shipSpeed && `speed=${sd.shipSpeed}`,
+    sd.frtTracking && `tracking=${sd.frtTracking}`,
+    sd.frtChargeType && `charge=${sd.frtChargeType}`,
+    sd.fob && `fob=${sd.fob}`,
+  ].filter(Boolean);
+  if (sdParts.length > 0) {
+    sections.push(`[SHIPPING] ${sdParts.join(" / ")}`);
+  }
+
+  // Raw label OCR fields the receiver didn't already promote into shipping
+  // details — keep them as a paper trail.
+  const info = session.shippingInfo;
+  const ocrParts = [
+    info.weight && `weight=${info.weight}`,
+    info.shipFrom && `shipFrom=${info.shipFrom}`,
+  ].filter(Boolean);
+  if (ocrParts.length > 0) {
+    sections.push(`[LABEL] ${ocrParts.join(" / ")}`);
+  }
+
+  if (session.noPackingSlip) sections.push("[PACKING SLIP] None included");
+  if (session.noDocuments) sections.push("[DOCS] None included");
+
+  for (const line of session.lineItems) {
+    if (!line.confirmed) continue;
+    const note = line.notes.trim();
+    if (line.condition !== "good" || note) {
+      const condLabel = line.condition === "good" ? "ok" : line.condition;
+      sections.push(
+        `[LINE ${line.lineNum + 1} / ${line.itemCode}] ${condLabel}${note ? ` — ${note}` : ""}`
+      );
+    }
+  }
+
+  return sections.join("\n");
+}
 
 export function ReviewSubmit() {
   const session = useSessionStore((s) => s.getActiveSession());
@@ -51,10 +109,12 @@ export function ReviewSubmit() {
             warehouse: "01", // Default warehouse
           }));
 
+        const goodsReturnComment = buildGoodsReturnComment(session);
         const result = await postGRPO({
           vendorCode: session.vendorCode ?? "",
           poDocEntry,
           lines: grpoLines,
+          goodsReturnComment: goodsReturnComment || undefined,
         });
 
         setGrpoDocNum(result.docNum);
@@ -93,7 +153,7 @@ export function ReviewSubmit() {
     <div className="min-h-full flex flex-col gap-4 p-4 max-w-lg mx-auto safe-top safe-bottom">
       <div className="flex items-center gap-3">
         <button
-          onClick={() => goToStep("STEP_5")}
+          onClick={() => goToStep("LINES")}
           className="text-primary text-sm font-medium px-2 py-1 -ml-2"
         >
           &larr; Back
@@ -127,12 +187,21 @@ export function ReviewSubmit() {
         <SummaryRow
           label="Shipping Label"
           value={`${session.labelPhotos.length} photo${session.labelPhotos.length !== 1 ? "s" : ""}`}
-          extra={session.shippingInfo.carrier || undefined}
+          extra={session.carrier || undefined}
         />
         <SummaryRow
           label="Packing Slip"
           value={`PO: ${session.poNumber || "N/A"}`}
-          extra={`${session.packingSlipPhotos.length} page${session.packingSlipPhotos.length !== 1 ? "s" : ""}`}
+          extra={
+            session.noPackingSlip
+              ? "None included"
+              : `${session.packingSlipPhotos.length} page${session.packingSlipPhotos.length !== 1 ? "s" : ""}`
+          }
+        />
+        <SummaryRow
+          label="Shipping Details"
+          value={session.shippingDetails.frtTracking || session.shippingDetails.transpCode || "—"}
+          extra={session.shippingDetails.shipSpeed || undefined}
         />
         <SummaryRow
           label="Documents"

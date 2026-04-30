@@ -16,6 +16,12 @@ interface GRPOInput {
   poDocEntry: number;
   lines: GRPOLineInput[];
   comments?: string;
+  /**
+   * Catch-all dump of fields collected by the PWA that don't have a dedicated
+   * SAP destination today (box damage notes, shipping detail edits, carrier,
+   * per-line condition/notes, etc.). Written to OPDN.U_GoodsReturnComment.
+   */
+  goodsReturnComment?: string;
 }
 
 /**
@@ -50,7 +56,7 @@ router.post("/", async (req, res) => {
       `${input.lines.length} lines by ${user?.email ?? "unknown"}`
   );
 
-  const slPayload = {
+  const slPayload: Record<string, unknown> = {
     DocDate: new Date().toISOString().slice(0, 10),
     CardCode: input.vendorCode,
     Comments:
@@ -65,6 +71,10 @@ router.post("/", async (req, res) => {
       WarehouseCode: line.warehouse,
     })),
   };
+
+  if (input.goodsReturnComment && input.goodsReturnComment.trim()) {
+    slPayload.U_GoodsReturnComment = input.goodsReturnComment;
+  }
 
   try {
     const slRes = await slFetch("/PurchaseDeliveryNotes", {

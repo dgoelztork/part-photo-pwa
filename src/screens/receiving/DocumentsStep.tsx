@@ -46,7 +46,7 @@ export function DocumentsStep() {
 
   return (
     <div className="min-h-full flex flex-col gap-4 p-4 max-w-lg mx-auto safe-top safe-bottom">
-      <StepHeader currentStep="STEP_4" onBack={() => goToStep("STEP_3")} />
+      <StepHeader currentStep="DOCUMENTS" onBack={() => goToStep("SHIPPING_DETAILS")} />
 
       <p className="text-sm text-text-secondary">
         Add MTRs, certificates, or other documents. On iPhone, tap{" "}
@@ -140,7 +140,7 @@ export function DocumentsStep() {
       </label>
 
       <StepNavigation
-        onNext={() => goToStep("STEP_5")}
+        onNext={() => goToStep("LINES")}
         nextDisabled={!canProceed}
       >
         {!canProceed && (

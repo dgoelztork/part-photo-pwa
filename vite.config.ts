@@ -4,11 +4,14 @@ import mkcert from "vite-plugin-mkcert";
 import tailwindcss from "@tailwindcss/vite";
 
 const base = process.env.GITHUB_PAGES ? "/part-photo-pwa/" : "/";
+// Set VITE_NO_MKCERT=1 to skip the local CA (e.g. when fronting with Tailscale
+// serve, which terminates TLS upstream with a real cert).
+const useMkcert = !process.env.VITE_NO_MKCERT;
 
 export default defineConfig({
   base,
   plugins: [
-    mkcert(),
+    ...(useMkcert ? [mkcert()] : []),
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",

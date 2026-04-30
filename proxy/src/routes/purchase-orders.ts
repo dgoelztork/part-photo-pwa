@@ -12,9 +12,13 @@ router.get("/:poNumber", async (req, res) => {
   console.log(`[PO] Looking up PO ${poNumber}...`);
 
   try {
+    // TransportationCode is the SL name for OPOR.TrnspCode. UDFs (U_*) carry through verbatim.
+    // DocumentLines is expanded fully; PO line FreeTxt comes through as FreeText.
     const slRes = await slFetch(
       `/PurchaseOrders?$filter=DocNum eq ${encodeURIComponent(poNumber)}` +
-        `&$select=DocEntry,DocNum,CardCode,CardName,DocDate,DocumentLines`
+        `&$select=DocEntry,DocNum,CardCode,CardName,DocDate,TransportationCode,` +
+        `U_pImportantInfo,U_pInternalComments,U_exponotes,` +
+        `U_ShipSpeed,U_pFOB,U_pFrtChargeType,U_pFrtTracking,DocumentLines`
     );
 
     if (!slRes.ok) {
@@ -49,6 +53,7 @@ router.get("/:poNumber", async (req, res) => {
       unitPrice: line.UnitPrice,
       warehouse: line.WarehouseCode,
       uom: line.UoMCode ?? line.MeasureUnit ?? "EA",
+      freeText: line.FreeText ?? "",
     }));
 
     // Filter to only lines with open quantity
@@ -60,6 +65,16 @@ router.get("/:poNumber", async (req, res) => {
       vendorCode: po.CardCode,
       vendorName: po.CardName,
       orderDate: po.DocDate,
+      // PO header notes surfaced for the receiver
+      importantInfo: po.U_pImportantInfo ?? "",
+      internalComments: po.U_pInternalComments ?? "",
+      expoNotes: po.U_exponotes ?? "",
+      // Shipping details from PO header for verify/augment
+      transpCode: po.TransportationCode ?? null,
+      shipSpeed: po.U_ShipSpeed ?? "",
+      fob: po.U_pFOB ?? "",
+      frtChargeType: po.U_pFrtChargeType ?? "",
+      frtTracking: po.U_pFrtTracking ?? "",
       lines: openLines,
       totalLines: lines.length,
       openLineCount: openLines.length,

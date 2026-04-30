@@ -2,8 +2,9 @@ import { useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useSessionStore } from "../../stores/session-store";
 import { BoxPhotoStep } from "./BoxPhotoStep";
-import { ShippingLabelStep } from "./ShippingLabelStep";
+import { CarrierStep } from "./CarrierStep";
 import { PackingSlipStep } from "./PackingSlipStep";
+import { ShippingDetailsStep } from "./ShippingDetailsStep";
 import { DocumentsStep } from "./DocumentsStep";
 import { LineReceivingStep } from "./LineReceivingStep";
 import { ReviewSubmit } from "./ReviewSubmit";
@@ -35,16 +36,17 @@ export function ReceivingWizard() {
   const goHome = () => navigate("/");
 
   switch (session.status) {
-    case "CREATED":
-    case "STEP_1":
+    case "BOX":
       return <BoxPhotoStep onBack={goHome} />;
-    case "STEP_2":
-      return <ShippingLabelStep />;
-    case "STEP_3":
+    case "CARRIER":
+      return <CarrierStep />;
+    case "PACKING_SLIP":
       return <PackingSlipStep />;
-    case "STEP_4":
+    case "SHIPPING_DETAILS":
+      return <ShippingDetailsStep />;
+    case "DOCUMENTS":
       return <DocumentsStep />;
-    case "STEP_5":
+    case "LINES":
       return <LineReceivingStep />;
     case "REVIEW":
       return <ReviewSubmit />;

@@ -1,15 +1,16 @@
 export type SessionStatus =
-  | "CREATED"
-  | "STEP_1"
-  | "STEP_2"
-  | "STEP_3"
-  | "STEP_4"
-  | "STEP_5"
+  | "BOX"
+  | "CARRIER"
+  | "PACKING_SLIP"
+  | "SHIPPING_DETAILS"
+  | "DOCUMENTS"
+  | "LINES"
   | "REVIEW"
   | "SUBMITTED";
 
 export type DocumentType = "mtr" | "coc" | "coa" | "inspection" | "other";
 export type ItemCondition = "good" | "damaged" | "wrong_item" | "short";
+export type Carrier = "UPS" | "FedEx" | "LTL" | "Other";
 
 export interface CapturedPhoto {
   id: string;
@@ -44,6 +45,16 @@ export interface ReceivingLine {
   notes: string;
   photos: CapturedPhoto[];
   confirmed: boolean;
+  // POR1.FreeTxt from the PO line, surfaced read-only for the receiver
+  freeText: string;
+}
+
+export interface ShippingDetails {
+  transpCode: string;
+  shipSpeed: string;
+  fob: string;
+  frtChargeType: string;
+  frtTracking: string;
 }
 
 export interface ReceivingSession {
@@ -52,27 +63,37 @@ export interface ReceivingSession {
   createdBy: string;
   status: SessionStatus;
 
-  // Step 1: Box
+  // BOX step — box photos + label photos captured together
   boxPhotos: CapturedPhoto[];
   boxDamaged: boolean;
   boxDamageNotes: string;
-
-  // Step 2: Shipping Label
   labelPhotos: CapturedPhoto[];
+  // Raw OCR extraction from the shipping label, used to prefill shipping details
   shippingInfo: ShippingInfo;
 
-  // Step 3: Packing Slip
+  // CARRIER step — receiver picks before packing slip
+  carrier?: Carrier;
+
+  // PACKING_SLIP step
   packingSlipPhotos: CapturedPhoto[];
+  noPackingSlip: boolean;
   poNumber: string;
   poDocEntry?: number;
   vendorCode?: string;
   vendorName?: string;
+  // PO-header notes surfaced for the receiver to read (read-only)
+  importantInfo: string;
+  internalComments: string;
+  expoNotes: string;
 
-  // Step 4: Documents
+  // SHIPPING_DETAILS step — editable values, prefilled from PO + carrier + label OCR
+  shippingDetails: ShippingDetails;
+
+  // DOCUMENTS step
   documents: CapturedDocument[];
   noDocuments: boolean;
 
-  // Step 5: Line Receiving
+  // LINES step
   lineItems: ReceivingLine[];
 
   // Submission
@@ -95,10 +116,20 @@ export const CONDITION_LABELS: Record<ItemCondition, string> = {
 };
 
 export const STEP_LABELS: Record<string, string> = {
-  STEP_1: "Box Photos",
-  STEP_2: "Shipping Label",
-  STEP_3: "Packing Slip",
-  STEP_4: "Documents",
-  STEP_5: "Line Receiving",
+  BOX: "Box & Label",
+  CARRIER: "Carrier",
+  PACKING_SLIP: "Packing Slip",
+  SHIPPING_DETAILS: "Shipping Details",
+  DOCUMENTS: "Documents",
+  LINES: "Line Receiving",
   REVIEW: "Review",
 };
+
+export const STEP_ORDER: SessionStatus[] = [
+  "BOX",
+  "CARRIER",
+  "PACKING_SLIP",
+  "SHIPPING_DETAILS",
+  "DOCUMENTS",
+  "LINES",
+];

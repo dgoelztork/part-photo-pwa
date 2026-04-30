@@ -80,6 +80,16 @@ export interface POResult {
   vendorCode: string;
   vendorName: string;
   orderDate: string;
+  // PO header notes (OPOR.U_pImportantInfo / U_pInternalComments / U_exponotes)
+  importantInfo: string;
+  internalComments: string;
+  expoNotes: string;
+  // Shipping detail defaults from PO header
+  transpCode: string | null;
+  shipSpeed: string;
+  fob: string;
+  frtChargeType: string;
+  frtTracking: string;
   lines: POLine[];
   totalLines: number;
   openLineCount: number;
@@ -94,6 +104,8 @@ export interface POLine {
   unitPrice: number;
   warehouse: string;
   uom: string;
+  // POR1.FreeTxt — line-specific note from the PO
+  freeText: string;
 }
 
 export interface GRPOResult {
@@ -123,6 +135,11 @@ export async function postGRPO(payload: {
     warehouse: string;
   }>;
   comments?: string;
+  /**
+   * Catch-all dump of fields collected by the PWA that don't have a dedicated
+   * SAP destination today. Lands in OPDN.U_GoodsReturnComment.
+   */
+  goodsReturnComment?: string;
 }): Promise<GRPOResult> {
   const res = await proxyFetch("/api/grpo", {
     method: "POST",

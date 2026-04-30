@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# TLS material — never commit private keys
+proxy/certs/
+*.pem
+*.pfx
+*.key
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

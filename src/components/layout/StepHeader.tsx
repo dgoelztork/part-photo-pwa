@@ -1,8 +1,8 @@
 
 import type { SessionStatus } from "../../types/session";
-import { STEP_LABELS } from "../../types/session";
+import { STEP_LABELS, STEP_ORDER } from "../../types/session";
 
-const STEPS: SessionStatus[] = ["STEP_1", "STEP_2", "STEP_3", "STEP_4", "STEP_5"];
+const STEPS: SessionStatus[] = STEP_ORDER;
 
 interface StepHeaderProps {
   currentStep: SessionStatus;

@@ -7,8 +7,10 @@ import type {
   CapturedPhoto,
   CapturedDocument,
   ShippingInfo,
+  ShippingDetails,
   ReceivingLine,
   ItemCondition,
+  Carrier,
 } from "../types/session";
 
 interface SessionStore {
@@ -25,29 +27,48 @@ interface SessionStore {
   setStatus: (status: SessionStatus) => void;
   goToStep: (step: SessionStatus) => void;
 
-  // Step 1: Box
+  // BOX step (now also holds the shipping label photos)
   addBoxPhoto: (photo: CapturedPhoto) => void;
   removeBoxPhoto: (photoId: string) => void;
   setBoxDamaged: (damaged: boolean) => void;
   setBoxDamageNotes: (notes: string) => void;
-
-  // Step 2: Shipping Label
   addLabelPhoto: (photo: CapturedPhoto) => void;
   removeLabelPhoto: (photoId: string) => void;
   updateShippingInfo: (info: Partial<ShippingInfo>) => void;
 
-  // Step 3: Packing Slip
+  // CARRIER step
+  setCarrier: (carrier: Carrier) => void;
+
+  // PACKING_SLIP step
   addPackingSlipPhoto: (photo: CapturedPhoto) => void;
   removePackingSlipPhoto: (photoId: string) => void;
+  setNoPackingSlip: (noPackingSlip: boolean) => void;
   setPoNumber: (poNumber: string) => void;
-  setPoData: (docEntry: number, vendorCode: string, vendorName: string) => void;
+  // Called after a successful PO lookup; pulls in everything we need to surface
+  // on later steps (shipping details defaults, header notes, etc.).
+  applyPoLookup: (data: {
+    docEntry: number;
+    vendorCode: string;
+    vendorName: string;
+    importantInfo: string;
+    internalComments: string;
+    expoNotes: string;
+    transpCode: string | null;
+    shipSpeed: string;
+    fob: string;
+    frtChargeType: string;
+    frtTracking: string;
+  }) => void;
 
-  // Step 4: Documents
+  // SHIPPING_DETAILS step
+  updateShippingDetails: (patch: Partial<ShippingDetails>) => void;
+
+  // DOCUMENTS step
   addDocument: (doc: CapturedDocument) => void;
   removeDocument: (photoId: string) => void;
   setNoDocuments: (noDocuments: boolean) => void;
 
-  // Step 5: Line Receiving
+  // LINES step
   setLineItems: (lines: ReceivingLine[]) => void;
   updateLine: (lineNum: number, updates: Partial<ReceivingLine>) => void;
   addLinePhoto: (lineNum: number, photo: CapturedPhoto) => void;
@@ -64,14 +85,19 @@ function createEmptySession(userName: string): ReceivingSession {
     id: generateId(),
     createdAt: new Date().toISOString(),
     createdBy: userName,
-    status: "STEP_1",
+    status: "BOX",
     boxPhotos: [],
     boxDamaged: false,
     boxDamageNotes: "",
     labelPhotos: [],
     shippingInfo: { carrier: "", trackingNumber: "", weight: "", shipFrom: "", shippingSpeed: "" },
     packingSlipPhotos: [],
+    noPackingSlip: false,
     poNumber: "",
+    importantInfo: "",
+    internalComments: "",
+    expoNotes: "",
+    shippingDetails: { transpCode: "", shipSpeed: "", fob: "", frtChargeType: "", frtTracking: "" },
     documents: [],
     noDocuments: false,
     lineItems: [],
@@ -150,7 +176,7 @@ export const useSessionStore = create<SessionStore>()(
         }));
       },
 
-      // Step 1
+      // BOX
       addBoxPhoto: (photo: CapturedPhoto) => {
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
@@ -180,7 +206,7 @@ export const useSessionStore = create<SessionStore>()(
         }));
       },
 
-      // Step 2
+      // BOX (label photos captured on the same step)
       addLabelPhoto: (photo: CapturedPhoto) => {
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
@@ -203,7 +229,21 @@ export const useSessionStore = create<SessionStore>()(
         }));
       },
 
-      // Step 3
+      // CARRIER
+      setCarrier: (carrier: Carrier) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
+            carrier,
+            // Mirror into the editable shipping details if the receiver hasn't
+            // overridden it yet — saves a re-entry on the SHIPPING_DETAILS step.
+            shippingDetails: s.shippingDetails.transpCode
+              ? s.shippingDetails
+              : { ...s.shippingDetails, transpCode: carrier },
+          })),
+        }));
+      },
+
+      // PACKING_SLIP
       addPackingSlipPhoto: (photo: CapturedPhoto) => {
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
@@ -218,6 +258,13 @@ export const useSessionStore = create<SessionStore>()(
           })),
         }));
       },
+      setNoPackingSlip: (noPackingSlip: boolean) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, () => ({
+            noPackingSlip,
+          })),
+        }));
+      },
       setPoNumber: (poNumber: string) => {
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, () => ({
@@ -225,17 +272,40 @@ export const useSessionStore = create<SessionStore>()(
           })),
         }));
       },
-      setPoData: (docEntry: number, vendorCode: string, vendorName: string) => {
+      applyPoLookup: (data) => {
         set((state) => ({
-          sessions: updateSession(state.sessions, state.activeSessionId, () => ({
-            poDocEntry: docEntry,
-            vendorCode,
-            vendorName,
+          sessions: updateSession(state.sessions, state.activeSessionId, (s) => {
+            // Don't clobber edits the receiver may have already made on the
+            // shipping-details step; only fill blanks from the PO defaults.
+            const sd = s.shippingDetails;
+            const carrierDefault = s.carrier ?? data.transpCode ?? "";
+            return {
+              poDocEntry: data.docEntry,
+              vendorCode: data.vendorCode,
+              vendorName: data.vendorName,
+              importantInfo: data.importantInfo,
+              internalComments: data.internalComments,
+              expoNotes: data.expoNotes,
+              shippingDetails: {
+                transpCode: sd.transpCode || carrierDefault,
+                shipSpeed: sd.shipSpeed || s.shippingInfo.shippingSpeed || data.shipSpeed,
+                fob: sd.fob || data.fob,
+                frtChargeType: sd.frtChargeType || data.frtChargeType,
+                frtTracking: sd.frtTracking || s.shippingInfo.trackingNumber || data.frtTracking,
+              },
+            };
+          }),
+        }));
+      },
+      updateShippingDetails: (patch: Partial<ShippingDetails>) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
+            shippingDetails: { ...s.shippingDetails, ...patch },
           })),
         }));
       },
 
-      // Step 4
+      // DOCUMENTS
       addDocument: (doc: CapturedDocument) => {
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
@@ -258,7 +328,7 @@ export const useSessionStore = create<SessionStore>()(
         }));
       },
 
-      // Step 5
+      // LINES
       setLineItems: (lines: ReceivingLine[]) => {
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, () => ({

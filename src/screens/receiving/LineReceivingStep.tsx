@@ -31,7 +31,7 @@ export function LineReceivingStep() {
 
   return (
     <div className="min-h-full flex flex-col gap-4 p-4 max-w-lg mx-auto safe-top safe-bottom">
-      <StepHeader currentStep="STEP_5" onBack={() => goToStep("STEP_4")} />
+      <StepHeader currentStep="LINES" onBack={() => goToStep("DOCUMENTS")} />
 
       <div className="flex items-center justify-between">
         <p className="text-sm text-text-secondary">
@@ -139,6 +139,16 @@ function LineDetailView({
           <span>Open: {line.openQty}</span>
         </div>
       </div>
+
+      {/* PO line FreeText (POR1.FreeTxt) — surfaced read-only for the receiver */}
+      {line.freeText && (
+        <div className="rounded-xl p-3 border bg-amber-50 border-amber-200 text-amber-900">
+          <p className="text-xs font-semibold uppercase tracking-wide opacity-70">
+            PO Line Note
+          </p>
+          <p className="text-sm whitespace-pre-wrap mt-1">{line.freeText}</p>
+        </div>
+      )}
 
       {/* Photo capture */}
       <CameraCapture

@@ -11,8 +11,9 @@ export function PackingSlipStep() {
   const session = useSessionStore((s) => s.getActiveSession());
   const addPhoto = useSessionStore((s) => s.addPackingSlipPhoto);
   const removePhoto = useSessionStore((s) => s.removePackingSlipPhoto);
+  const setNoPackingSlip = useSessionStore((s) => s.setNoPackingSlip);
   const setPoNumber = useSessionStore((s) => s.setPoNumber);
-  const setPoStoreData = useSessionStore((s) => s.setPoData);
+  const applyPoLookup = useSessionStore((s) => s.applyPoLookup);
   const setLineItems = useSessionStore((s) => s.setLineItems);
   const goToStep = useSessionStore((s) => s.goToStep);
   const [ocrStatus, setOcrStatus] = useState<string | null>(null);
@@ -21,8 +22,6 @@ export function PackingSlipStep() {
   const [lookingUp, setLookingUp] = useState(false);
   const [capturing, setCapturing] = useState(false);
 
-  // Capture flow accepts photos OR scanner-produced PDFs. OCR runs on images only;
-  // multi-page scans skip OCR (Tesseract can't read PDFs in-browser without PDF.js).
   const handleCapture = useCallback(async () => {
     const file = await captureDocument();
     if (!file) return;
@@ -61,9 +60,20 @@ export function PackingSlipStep() {
     try {
       const result = await lookupPO(session.poNumber.trim());
       setPoData(result);
-      setPoStoreData(result.docEntry, result.vendorCode, result.vendorName);
+      applyPoLookup({
+        docEntry: result.docEntry,
+        vendorCode: result.vendorCode,
+        vendorName: result.vendorName,
+        importantInfo: result.importantInfo,
+        internalComments: result.internalComments,
+        expoNotes: result.expoNotes,
+        transpCode: result.transpCode,
+        shipSpeed: result.shipSpeed,
+        fob: result.fob,
+        frtChargeType: result.frtChargeType,
+        frtTracking: result.frtTracking,
+      });
 
-      // Pre-populate line items from SAP PO data
       const lines: ReceivingLine[] = result.lines.map((l) => ({
         lineNum: l.lineNum,
         itemCode: l.itemCode,
@@ -71,11 +81,12 @@ export function PackingSlipStep() {
         orderedQty: l.orderedQty,
         previouslyReceivedQty: l.orderedQty - l.openQty,
         openQty: l.openQty,
-        receivedQty: l.openQty, // Default to receiving full open qty
+        receivedQty: l.openQty,
         condition: "good",
         notes: "",
         photos: [],
         confirmed: false,
+        freeText: l.freeText,
       }));
       setLineItems(lines);
     } catch (err) {
@@ -83,42 +94,57 @@ export function PackingSlipStep() {
     } finally {
       setLookingUp(false);
     }
-  }, [session?.poNumber, setLineItems]);
+  }, [session?.poNumber, applyPoLookup, setLineItems]);
 
   if (!session) return null;
 
   const hasPhotos = session.packingSlipPhotos.length >= 1;
   const hasPO = session.poNumber.trim().length > 0;
-  // Allow proceeding if PO is entered (lookup is optional — proxy may not be available)
-  const canProceed = hasPhotos && hasPO;
+  const photosOk = hasPhotos || session.noPackingSlip;
+  const canProceed = photosOk && hasPO;
 
   return (
     <div className="min-h-full flex flex-col gap-4 p-4 max-w-lg mx-auto safe-top safe-bottom">
-      <StepHeader currentStep="STEP_3" onBack={() => goToStep("STEP_2")} />
+      <StepHeader currentStep="PACKING_SLIP" onBack={() => goToStep("CARRIER")} />
 
-      <p className="text-sm text-text-secondary">
-        Capture the packing slip. On iPhone, tap{" "}
-        <span className="font-medium">Choose Files → Scan Documents</span> for a clean
-        multi-page PDF, or take a photo for instant PO-number OCR.
-      </p>
+      {!session.noPackingSlip && (
+        <>
+          <p className="text-sm text-text-secondary">
+            Capture the packing slip. On iPhone, tap{" "}
+            <span className="font-medium">Choose Files → Scan Documents</span> for a clean
+            multi-page PDF, or take a photo for instant PO-number OCR.
+          </p>
 
-      <button
-        onClick={handleCapture}
-        disabled={capturing}
-        className="w-full py-4 rounded-xl bg-text text-white font-semibold text-base
-                   flex items-center justify-center gap-2
-                   active:scale-[0.98] transition-transform disabled:opacity-60"
-      >
-        {capturing ? "Processing…" : "Add Packing Slip"}
-      </button>
+          <button
+            onClick={handleCapture}
+            disabled={capturing}
+            className="w-full py-4 rounded-xl bg-text text-white font-semibold text-base
+                       flex items-center justify-center gap-2
+                       active:scale-[0.98] transition-transform disabled:opacity-60"
+          >
+            {capturing ? "Processing…" : "Add Packing Slip"}
+          </button>
 
-      {ocrStatus && (
-        <p className="text-center text-sm text-text-secondary animate-pulse-dot">
-          {ocrStatus}
-        </p>
+          {ocrStatus && (
+            <p className="text-center text-sm text-text-secondary animate-pulse-dot">
+              {ocrStatus}
+            </p>
+          )}
+
+          <PhotoGallery photos={session.packingSlipPhotos} onDelete={removePhoto} />
+        </>
       )}
 
-      <PhotoGallery photos={session.packingSlipPhotos} onDelete={removePhoto} />
+      {/* No packing slip toggle */}
+      <label className="flex items-center gap-3 cursor-pointer px-1">
+        <input
+          type="checkbox"
+          checked={session.noPackingSlip}
+          onChange={(e) => setNoPackingSlip(e.target.checked)}
+          className="w-5 h-5 accent-primary"
+        />
+        <span className="text-sm text-text">No packing slip included with this shipment</span>
+      </label>
 
       {/* PO Number entry + lookup */}
       <div className="bg-surface rounded-xl p-4 shadow-sm">
@@ -149,7 +175,6 @@ export function PackingSlipStep() {
           </button>
         </div>
 
-        {/* PO lookup result */}
         {poData && (
           <div className="mt-3 p-3 rounded-lg bg-green-50 border border-green-200 animate-slide-in">
             <p className="font-semibold text-text">{poData.vendorName}</p>
@@ -162,7 +187,6 @@ export function PackingSlipStep() {
           </div>
         )}
 
-        {/* PO lookup error */}
         {poError && (
           <div className="mt-3 p-3 rounded-lg bg-red-50 border border-red-200 animate-slide-in">
             <p className="text-sm text-error">{poError}</p>
@@ -179,18 +203,68 @@ export function PackingSlipStep() {
         )}
       </div>
 
+      {/* PO header notes — surfaced after a successful lookup */}
+      {poData && (session.importantInfo || session.internalComments || session.expoNotes) && (
+        <div className="flex flex-col gap-2 animate-slide-in">
+          {session.importantInfo && (
+            <NoteCard
+              title="Important Info"
+              body={session.importantInfo}
+              tone="amber"
+            />
+          )}
+          {session.internalComments && (
+            <NoteCard
+              title="Internal Comments"
+              body={session.internalComments}
+              tone="blue"
+            />
+          )}
+          {session.expoNotes && (
+            <NoteCard
+              title="Expediting Notes"
+              body={session.expoNotes}
+              tone="violet"
+            />
+          )}
+        </div>
+      )}
+
       <StepNavigation
-        onNext={() => goToStep("STEP_4")}
+        onNext={() => goToStep("SHIPPING_DETAILS")}
         nextDisabled={!canProceed}
       >
         {!canProceed && (
           <p className="text-center text-sm text-text-secondary">
-            {!hasPhotos
-              ? "Take at least 1 photo to continue"
+            {!photosOk
+              ? "Take at least 1 photo or check 'No packing slip' to continue"
               : "Enter PO number to continue"}
           </p>
         )}
       </StepNavigation>
+    </div>
+  );
+}
+
+function NoteCard({
+  title,
+  body,
+  tone,
+}: {
+  title: string;
+  body: string;
+  tone: "amber" | "blue" | "violet";
+}) {
+  const palette =
+    tone === "amber"
+      ? "bg-amber-50 border-amber-200 text-amber-900"
+      : tone === "blue"
+        ? "bg-blue-50 border-blue-200 text-blue-900"
+        : "bg-violet-50 border-violet-200 text-violet-900";
+  return (
+    <div className={`rounded-xl p-3 border ${palette}`}>
+      <p className="text-xs font-semibold uppercase tracking-wide opacity-70">{title}</p>
+      <p className="text-sm whitespace-pre-wrap mt-1">{body}</p>
     </div>
   );
 }
