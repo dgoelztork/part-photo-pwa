@@ -104,11 +104,15 @@ export function ReviewSubmit() {
           }));
 
         const goodsReturnComment = buildGoodsReturnComment(session);
+        const sd = session.shippingDetails;
+        const inboundFrtNum = parseFloat(sd.freightRate);
         const result = await postGRPO({
           vendorCode: session.vendorCode ?? "",
           poDocEntry,
           lines: grpoLines,
           goodsReturnComment: goodsReturnComment || undefined,
+          frtTracking: sd.frtTracking?.trim() || undefined,
+          inboundFrt: isFinite(inboundFrtNum) && inboundFrtNum > 0 ? inboundFrtNum : undefined,
         });
 
         setGrpoDocNum(result.docNum);

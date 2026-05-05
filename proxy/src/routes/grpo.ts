@@ -22,6 +22,10 @@ interface GRPOInput {
    * per-line condition/notes, etc.). Written to OPDN.U_GoodsReturnComment.
    */
   goodsReturnComment?: string;
+  /** Tracking number from the shipping label. Written to OPDN.U_pFrtTracking. */
+  frtTracking?: string;
+  /** UPS-rated inbound freight cost as a number. Written to OPDN.U_InboundFrt. */
+  inboundFrt?: number;
 }
 
 /**
@@ -74,6 +78,14 @@ router.post("/", async (req, res) => {
 
   if (input.goodsReturnComment && input.goodsReturnComment.trim()) {
     slPayload.U_GoodsReturnComment = input.goodsReturnComment;
+  }
+
+  if (input.frtTracking && input.frtTracking.trim()) {
+    slPayload.U_pFrtTracking = input.frtTracking.trim();
+  }
+
+  if (typeof input.inboundFrt === "number" && isFinite(input.inboundFrt) && input.inboundFrt > 0) {
+    slPayload.U_InboundFrt = input.inboundFrt;
   }
 
   try {

@@ -140,6 +140,10 @@ export async function postGRPO(payload: {
    * SAP destination today. Lands in OPDN.U_GoodsReturnComment.
    */
   goodsReturnComment?: string;
+  /** Tracking number — lands in OPDN.U_pFrtTracking. */
+  frtTracking?: string;
+  /** UPS-rated freight cost as a number (no $). Lands in OPDN.U_InboundFrt. */
+  inboundFrt?: number;
 }): Promise<GRPOResult> {
   const res = await proxyFetch("/api/grpo", {
     method: "POST",
