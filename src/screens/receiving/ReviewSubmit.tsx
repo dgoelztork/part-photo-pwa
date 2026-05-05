@@ -240,12 +240,12 @@ export function ReviewSubmit() {
         {session.lineItems.map((l) => (
           <div
             key={l.lineNum}
-            className={`grid grid-cols-[1fr_60px_60px] gap-1 p-3 text-sm border-b border-border/50
+            className={`grid grid-cols-[1fr_60px_60px] gap-1 p-3 text-sm border-b border-border/50 items-center
                         ${l.condition !== "good" ? "bg-red-50" : ""}`}
           >
-            <div>
+            <div className="min-w-0">
               <p className="font-medium text-text">{l.itemCode}</p>
-              <p className="text-xs text-text-secondary truncate">{l.itemDescription}</p>
+              <p className="text-xs text-text-secondary break-words">{l.itemDescription}</p>
             </div>
             <span className="text-center text-text-secondary">{l.openQty}</span>
             <span className={`text-center font-semibold ${l.confirmed ? "text-success" : "text-text-secondary"}`}>
