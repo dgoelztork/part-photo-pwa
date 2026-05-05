@@ -26,6 +26,74 @@ export function getDefaultDestZip(): string {
   return DEFAULT_DEST_ZIP;
 }
 
+/**
+ * Map a 5-digit US ZIP to a 2-letter state code using SCF prefix ranges.
+ * Returns null for non-US / unrecognized prefixes; UPS will then 4xx and the
+ * caller can surface the error rather than silently send a guessed state.
+ *
+ * Source: USPS SCF first-3-digit prefix table (public). This handles every
+ * state + DC. Territories (PR/VI/etc.) and APO/FPO addresses return null —
+ * UPS rating won't quote those over this endpoint anyway.
+ */
+function stateFromZip(zip5: string): string | null {
+  const n = parseInt(zip5.slice(0, 3), 10);
+  if (!isFinite(n)) return null;
+  if (n === 5) return "NY";
+  if (n >= 10 && n <= 27) return "MA";
+  if (n >= 28 && n <= 29) return "RI";
+  if (n >= 30 && n <= 38) return "NH";
+  if (n >= 39 && n <= 49) return "ME";
+  if (n >= 50 && n <= 59) return "VT";
+  if (n >= 60 && n <= 69) return "CT";
+  if (n >= 70 && n <= 89) return "NJ";
+  if (n >= 100 && n <= 149) return "NY";
+  if (n >= 150 && n <= 196) return "PA";
+  if (n >= 197 && n <= 199) return "DE";
+  if (n >= 200 && n <= 205) return "DC";
+  if (n >= 206 && n <= 219) return "MD";
+  if (n >= 220 && n <= 246) return "VA";
+  if (n >= 247 && n <= 268) return "WV";
+  if (n >= 270 && n <= 289) return "NC";
+  if (n >= 290 && n <= 299) return "SC";
+  if (n >= 300 && n <= 319) return "GA";
+  if (n >= 320 && n <= 349) return "FL";
+  if (n >= 350 && n <= 369) return "AL";
+  if (n >= 370 && n <= 385) return "TN";
+  if (n >= 386 && n <= 397) return "MS";
+  if (n >= 398 && n <= 399) return "GA";
+  if (n >= 400 && n <= 427) return "KY";
+  if (n >= 430 && n <= 459) return "OH";
+  if (n >= 460 && n <= 479) return "IN";
+  if (n >= 480 && n <= 499) return "MI";
+  if (n >= 500 && n <= 528) return "IA";
+  if (n >= 530 && n <= 549) return "WI";
+  if (n >= 550 && n <= 567) return "MN";
+  if (n >= 570 && n <= 577) return "SD";
+  if (n >= 580 && n <= 588) return "ND";
+  if (n >= 590 && n <= 599) return "MT";
+  if (n >= 600 && n <= 629) return "IL";
+  if (n >= 630 && n <= 658) return "MO";
+  if (n >= 660 && n <= 679) return "KS";
+  if (n >= 680 && n <= 693) return "NE";
+  if (n >= 700 && n <= 714) return "LA";
+  if (n >= 716 && n <= 729) return "AR";
+  if (n >= 730 && n <= 749) return "OK";
+  if (n >= 750 && n <= 799) return "TX";
+  if (n >= 800 && n <= 816) return "CO";
+  if (n >= 820 && n <= 831) return "WY";
+  if (n >= 832 && n <= 838) return "ID";
+  if (n >= 840 && n <= 847) return "UT";
+  if (n >= 850 && n <= 865) return "AZ";
+  if (n >= 870 && n <= 884) return "NM";
+  if (n >= 889 && n <= 898) return "NV";
+  if (n >= 900 && n <= 961) return "CA";
+  if (n >= 967 && n <= 968) return "HI";
+  if (n >= 970 && n <= 979) return "OR";
+  if (n >= 980 && n <= 994) return "WA";
+  if (n >= 995 && n <= 999) return "AK";
+  return null;
+}
+
 interface CachedToken {
   accessToken: string;
   expiresAt: number;
@@ -125,9 +193,14 @@ function buildRateRequest(input: UpsRateInput) {
   // Shipper = account-holder zip (stays static across warehouses).
   // ShipTo  = destination warehouse zip from the request (label OCR or user-edited).
   const shipperZip = DEFAULT_DEST_ZIP || input.destZip;
+  const shipperState = stateFromZip(shipperZip);
+  const shipFromState = stateFromZip(input.originZip);
+  const shipToState = stateFromZip(input.destZip);
+
   const shipper = {
     Address: {
       PostalCode: shipperZip,
+      ...(shipperState ? { StateProvinceCode: shipperState } : {}),
       CountryCode: "US",
     },
     ...(ACCOUNT_NUMBER ? { ShipperNumber: ACCOUNT_NUMBER } : {}),
@@ -135,12 +208,14 @@ function buildRateRequest(input: UpsRateInput) {
   const shipFrom = {
     Address: {
       PostalCode: input.originZip,
+      ...(shipFromState ? { StateProvinceCode: shipFromState } : {}),
       CountryCode: "US",
     },
   };
   const shipTo = {
     Address: {
       PostalCode: input.destZip,
+      ...(shipToState ? { StateProvinceCode: shipToState } : {}),
       CountryCode: "US",
     },
   };

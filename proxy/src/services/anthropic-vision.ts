@@ -59,7 +59,13 @@ export async function extractShippingLabel(
             trackingNumber: {
               type: ["string", "null"],
               description:
-                "The tracking number, exactly as printed (no spaces). Null if not visible.",
+                "The CARRIER tracking number, exactly as printed (no spaces). " +
+                "Strongly prefer carrier-specific formats: UPS starts with '1Z' followed by 16 alphanumeric chars; " +
+                "FedEx is 12 or 15 digits; USPS is 20-22 digits or starts with 9; DHL is 10-11 digits. " +
+                "Do NOT return internal routing labels, sortation codes, BOL numbers, or customer references " +
+                "(e.g. 'CA 946 9-02', 'REF 1: ...', short alphanumeric codes near a routing barcode). " +
+                "When multiple barcodes are present, pick the one labeled 'TRACKING #' or that matches a carrier format. " +
+                "Null if no carrier-format tracking number is visible.",
             },
             weight: {
               type: ["string", "null"],
