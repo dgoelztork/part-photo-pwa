@@ -26,7 +26,8 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
 
   if (!session) return null;
 
-  const canProceed = session.boxPhotos.length >= 1 && session.labelPhotos.length >= 1;
+  const canProceed =
+    session.boxPhotos.length >= 1 && session.labelPhotos.length >= 1 && !extracting;
   const info = session.shippingInfo;
 
   // OCR the shipping label; fill blanks only so a manual entry isn't overwritten.

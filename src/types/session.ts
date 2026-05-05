@@ -55,6 +55,8 @@ export interface ShippingDetails {
   fob: string;
   frtChargeType: string;
   frtTracking: string;
+  shipFromZip: string;
+  weight: string;
 }
 
 export interface ReceivingSession {

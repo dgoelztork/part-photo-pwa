@@ -34,20 +34,11 @@ function buildGoodsReturnComment(session: ReceivingSession): string {
     sd.frtTracking && `tracking=${sd.frtTracking}`,
     sd.frtChargeType && `charge=${sd.frtChargeType}`,
     sd.fob && `fob=${sd.fob}`,
+    sd.shipFromZip && `shipFromZip=${sd.shipFromZip}`,
+    sd.weight && `weight=${sd.weight}`,
   ].filter(Boolean);
   if (sdParts.length > 0) {
     sections.push(`[SHIPPING] ${sdParts.join(" / ")}`);
-  }
-
-  // Raw label OCR fields the receiver didn't already promote into shipping
-  // details — keep them as a paper trail.
-  const info = session.shippingInfo;
-  const ocrParts = [
-    info.weight && `weight=${info.weight}`,
-    info.shipFrom && `shipFrom=${info.shipFrom}`,
-  ].filter(Boolean);
-  if (ocrParts.length > 0) {
-    sections.push(`[LABEL] ${ocrParts.join(" / ")}`);
   }
 
   if (session.noPackingSlip) sections.push("[PACKING SLIP] None included");

@@ -50,6 +50,18 @@ export function ShippingDetailsStep() {
           onChange={(v) => update({ fob: v })}
           placeholder="Origin, Destination, ..."
         />
+        <Field
+          label="Ship From Zip"
+          value={sd.shipFromZip}
+          onChange={(v) => update({ shipFromZip: v })}
+          placeholder="From the shipping label"
+        />
+        <Field
+          label="Weight"
+          value={sd.weight}
+          onChange={(v) => update({ weight: v })}
+          placeholder="e.g., 4.3 LBS"
+        />
       </div>
 
       <StepNavigation onNext={() => goToStep("DOCUMENTS")} />
