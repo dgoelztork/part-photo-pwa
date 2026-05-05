@@ -19,39 +19,6 @@
     <link rel="icon" href="/part-photo-pwa/favicon.ico" />
 
     <title>Part Receiving</title>
-
-    <!--
-      SPA fallback decoder. Pairs with public/404.html on GitHub Pages:
-      404.html encodes the deep-linked path into ?p=... and redirects here;
-      this script decodes it back into the URL before React Router mounts.
-    -->
-    <script type="text/javascript">
-      (function () {
-        var l = window.location;
-        if (l.search.indexOf("?p=") !== 0 && l.search.indexOf("&p=") < 0) return;
-        var q = {};
-        l.search
-          .slice(1)
-          .split("&")
-          .forEach(function (pair) {
-            var eq = pair.indexOf("=");
-            if (eq < 0) return;
-            var k = pair.slice(0, eq);
-            var v = pair.slice(eq + 1).replace(/~and~/g, "&");
-            q[k] = v;
-          });
-        if (q.p !== undefined) {
-          window.history.replaceState(
-            null,
-            null,
-            l.pathname.replace(/\/$/, "") +
-              (q.p || "") +
-              (q.q ? "?" + q.q : "") +
-              l.hash
-          );
-        }
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>
