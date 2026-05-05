@@ -16,7 +16,6 @@ export function PackingSlipStep() {
   const applyPoLookup = useSessionStore((s) => s.applyPoLookup);
   const setLineItems = useSessionStore((s) => s.setLineItems);
   const goToStep = useSessionStore((s) => s.goToStep);
-  const [ocrStatus, setOcrStatus] = useState<string | null>(null);
   const [poData, setPoData] = useState<POResult | null>(null);
   const [poError, setPoError] = useState<string | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
@@ -27,29 +26,12 @@ export function PackingSlipStep() {
     if (!file) return;
     setCapturing(true);
     try {
-      const isImage = file.type !== "application/pdf";
-      if (isImage) {
-        setOcrStatus("Reading packing slip...");
-        try {
-          const { recognizePartNumber } = await import("../../lib/ocr-reader");
-          const result = await recognizePartNumber(file);
-          if (result) {
-            setPoNumber(result);
-            setOcrStatus(`Found: ${result}`);
-          } else {
-            setOcrStatus("No PO number detected — enter manually below");
-          }
-        } catch {
-          setOcrStatus("OCR unavailable — enter PO number manually");
-        }
-        setTimeout(() => setOcrStatus(null), 3000);
-      }
       const photo = await processDocumentCapture(file);
       addPhoto(photo);
     } finally {
       setCapturing(false);
     }
-  }, [addPhoto, setPoNumber]);
+  }, [addPhoto]);
 
   const handleLookupPO = useCallback(async () => {
     if (!session?.poNumber.trim()) return;
@@ -109,12 +91,6 @@ export function PackingSlipStep() {
 
       {!session.noPackingSlip && (
         <>
-          <p className="text-sm text-text-secondary">
-            Capture the packing slip. On iPhone, tap{" "}
-            <span className="font-medium">Choose Files → Scan Documents</span> for a clean
-            multi-page PDF, or take a photo for instant PO-number OCR.
-          </p>
-
           <button
             onClick={handleCapture}
             disabled={capturing}
@@ -124,12 +100,6 @@ export function PackingSlipStep() {
           >
             {capturing ? "Processing…" : "Add Packing Slip"}
           </button>
-
-          {ocrStatus && (
-            <p className="text-center text-sm text-text-secondary animate-pulse-dot">
-              {ocrStatus}
-            </p>
-          )}
 
           <PhotoGallery photos={session.packingSlipPhotos} onDelete={removePhoto} />
         </>
@@ -151,7 +121,7 @@ export function PackingSlipStep() {
         <label className="block text-sm font-medium text-text-secondary mb-2">
           PO Number
         </label>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2">
           <input
             type="text"
             value={session.poNumber}
@@ -161,17 +131,17 @@ export function PackingSlipStep() {
               setPoError(null);
             }}
             placeholder="Enter PO number"
-            className="flex-1 p-3 rounded-lg border border-border text-lg font-semibold
+            className="w-full p-3 rounded-lg border border-border text-lg font-semibold
                        uppercase tracking-wider"
             onKeyDown={(e) => e.key === "Enter" && handleLookupPO()}
           />
           <button
             onClick={handleLookupPO}
             disabled={!hasPO || lookingUp}
-            className="px-4 py-3 rounded-lg bg-primary text-white font-medium text-sm
-                       disabled:opacity-40 whitespace-nowrap"
+            className="w-full py-3 rounded-lg bg-primary text-white font-medium text-base
+                       disabled:opacity-40"
           >
-            {lookingUp ? "..." : "Look Up"}
+            {lookingUp ? "Looking up…" : "Look Up"}
           </button>
         </div>
 
