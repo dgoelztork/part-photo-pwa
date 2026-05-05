@@ -30,6 +30,7 @@ export interface ShippingInfo {
   trackingNumber: string;
   weight: string;
   shipFrom: string;
+  shipToZip: string;
   shippingSpeed: string;
 }
 
@@ -56,6 +57,7 @@ export interface ShippingDetails {
   frtChargeType: string;
   frtTracking: string;
   shipFromZip: string;
+  shipToZip: string;
   weight: string;
   /** UPS-rated freight cost for the parcel (negotiated when available). Empty if not looked up. */
   freightRate: string;

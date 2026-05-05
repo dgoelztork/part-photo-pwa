@@ -169,6 +169,7 @@ export interface ShippingLabelExtraction {
   trackingNumber: string | null;
   weight: string | null;
   shipFrom: string | null;
+  shipToZip: string | null;
   shippingSpeed: string | null;
 }
 
@@ -188,6 +189,7 @@ export interface UpsRateResult {
  */
 export async function getUpsRate(input: {
   originZip: string;
+  destZip: string;
   weight: string;
   shippingSpeed?: string;
 }): Promise<UpsRateResult | null> {

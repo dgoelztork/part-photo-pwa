@@ -1,5 +1,6 @@
 import { Router } from "express";
 import {
+  getDefaultDestZip,
   getUpsRate,
   isUpsConfigured,
   shippingSpeedToServiceCode,
@@ -42,11 +43,19 @@ router.post("/ups-rate", async (req, res) => {
   }
 
   const originZip = normalizeZip(req.body?.originZip);
+  const destZip = normalizeZip(req.body?.destZip) ?? normalizeZip(getDefaultDestZip());
   const weightLbs = parseWeightLbs(req.body?.weight);
   if (!originZip) {
     res.status(400).json({
       error: "VALIDATION_ERROR",
       message: "originZip must be a 5-digit US ZIP",
+    });
+    return;
+  }
+  if (!destZip) {
+    res.status(400).json({
+      error: "VALIDATION_ERROR",
+      message: "destZip must be a 5-digit US ZIP (set on the request, or UPS_DEST_ZIP on the proxy)",
     });
     return;
   }
@@ -62,12 +71,12 @@ router.post("/ups-rate", async (req, res) => {
   const user = (req as any).user as { email?: string } | undefined;
   const t0 = Date.now();
   try {
-    const result = await getUpsRate({ originZip, weightLbs, serviceCode });
+    const result = await getUpsRate({ originZip, destZip, weightLbs, serviceCode });
     const ms = Date.now() - t0;
     const shown = result.negotiatedAmount ?? result.listAmount;
     console.log(
       `[UPS] Rate for ${user?.email ?? "unknown"} (${ms}ms): ` +
-        `${originZip} -> dest, ${weightLbs} LBS, svc=${serviceCode} (${result.serviceName}) -> ` +
+        `${originZip} -> ${destZip}, ${weightLbs} LBS, svc=${serviceCode} (${result.serviceName}) -> ` +
         `$${shown.toFixed(2)} ${result.negotiatedAmount != null ? "(negotiated)" : "(list)"}`
     );
     res.json(result);

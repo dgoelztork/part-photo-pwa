@@ -10,10 +10,20 @@ const CLIENT_ID = process.env.UPS_CLIENT_ID ?? "";
 const CLIENT_SECRET = process.env.UPS_CLIENT_SECRET ?? "";
 const ACCOUNT_NUMBER = process.env.UPS_ACCOUNT_NUMBER ?? "";
 const BASE_URL = (process.env.UPS_BASE_URL ?? "https://onlinetools.ups.com").replace(/\/$/, "");
-const DEST_ZIP = process.env.UPS_DEST_ZIP ?? "";
+/**
+ * Default destination zip used when the request body doesn't supply one.
+ * Also used as the Shipper.PostalCode in every rate request — i.e., the
+ * account-holder's billing zip — so it stays static even when receipts roll
+ * out to other warehouses with different ship-to zips.
+ */
+const DEFAULT_DEST_ZIP = process.env.UPS_DEST_ZIP ?? "";
 
 export function isUpsConfigured(): boolean {
-  return Boolean(CLIENT_ID && CLIENT_SECRET && DEST_ZIP);
+  return Boolean(CLIENT_ID && CLIENT_SECRET);
+}
+
+export function getDefaultDestZip(): string {
+  return DEFAULT_DEST_ZIP;
 }
 
 interface CachedToken {
@@ -89,6 +99,7 @@ const SERVICE_NAMES: Record<string, string> = {
 
 export interface UpsRateInput {
   originZip: string;
+  destZip: string;
   weightLbs: number;
   serviceCode: string;
 }
@@ -111,9 +122,12 @@ export interface UpsRateResult {
  * intentionally minimal — postal code + country is sufficient for parcel rate.
  */
 function buildRateRequest(input: UpsRateInput) {
+  // Shipper = account-holder zip (stays static across warehouses).
+  // ShipTo  = destination warehouse zip from the request (label OCR or user-edited).
+  const shipperZip = DEFAULT_DEST_ZIP || input.destZip;
   const shipper = {
     Address: {
-      PostalCode: DEST_ZIP, // shipper of record = our account, billed to our zip
+      PostalCode: shipperZip,
       CountryCode: "US",
     },
     ...(ACCOUNT_NUMBER ? { ShipperNumber: ACCOUNT_NUMBER } : {}),
@@ -126,7 +140,7 @@ function buildRateRequest(input: UpsRateInput) {
   };
   const shipTo = {
     Address: {
-      PostalCode: DEST_ZIP,
+      PostalCode: input.destZip,
       CountryCode: "US",
     },
   };

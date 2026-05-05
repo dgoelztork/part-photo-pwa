@@ -35,6 +35,7 @@ function buildGoodsReturnComment(session: ReceivingSession): string {
     sd.frtChargeType && `charge=${sd.frtChargeType}`,
     sd.fob && `fob=${sd.fob}`,
     sd.shipFromZip && `shipFromZip=${sd.shipFromZip}`,
+    sd.shipToZip && `shipToZip=${sd.shipToZip}`,
     sd.weight && `weight=${sd.weight}`,
     sd.freightRate && `rate=$${sd.freightRate}${sd.freightRateLabel ? ` ${sd.freightRateLabel}` : ""}`,
   ].filter(Boolean);

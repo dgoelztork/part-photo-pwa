@@ -11,6 +11,7 @@ export interface ShippingLabelExtraction {
   trackingNumber: string | null;
   weight: string | null;
   shipFrom: string | null;
+  shipToZip: string | null;
   shippingSpeed: string | null;
 }
 
@@ -74,6 +75,13 @@ export async function extractShippingLabel(
                 "Just the ZIP digits, no city/state/company name. Examples: '90210', '10001-1234'. " +
                 "Null if no ZIP is visible. International postal codes also acceptable if no US ZIP exists.",
             },
+            shipToZip: {
+              type: ["string", "null"],
+              description:
+                "Recipient's 5-digit US ZIP code (or ZIP+4) from the ship-to address block — " +
+                "the destination/delivery address. Just the ZIP digits, no city/state/company name. " +
+                "Examples: '94501', '10001-1234'. Null if no ZIP is visible.",
+            },
             shippingSpeed: {
               type: ["string", "null"],
               description:
@@ -82,7 +90,7 @@ export async function extractShippingLabel(
                 "'Priority Mail', 'First Class'. Use the exact phrase from the label. Null if not visible.",
             },
           },
-          required: ["carrier", "trackingNumber", "weight", "shipFrom", "shippingSpeed"],
+          required: ["carrier", "trackingNumber", "weight", "shipFrom", "shipToZip", "shippingSpeed"],
           additionalProperties: false,
         },
       },

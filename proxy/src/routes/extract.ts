@@ -68,7 +68,8 @@ router.post("/shipping-label", async (req, res) => {
       `[Extract] Shipping label for ${user?.email ?? "unknown"} ` +
         `(${sizeKb}KB image, ${ms}ms): ` +
         `carrier=${result.carrier ?? "-"}, tracking=${result.trackingNumber ?? "-"}, ` +
-        `speed=${result.shippingSpeed ?? "-"}, weight=${result.weight ?? "-"}, zip=${result.shipFrom ?? "-"}`
+        `speed=${result.shippingSpeed ?? "-"}, weight=${result.weight ?? "-"}, ` +
+        `from=${result.shipFrom ?? "-"}, to=${result.shipToZip ?? "-"}`
     );
     res.json(result);
   } catch (err) {

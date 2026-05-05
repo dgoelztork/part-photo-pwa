@@ -44,6 +44,7 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
       if (fields.trackingNumber && !info.trackingNumber) patch.trackingNumber = fields.trackingNumber;
       if (fields.weight && !info.weight) patch.weight = fields.weight;
       if (fields.shipFrom && !info.shipFrom) patch.shipFrom = fields.shipFrom;
+      if (fields.shipToZip && !info.shipToZip) patch.shipToZip = fields.shipToZip;
       if (fields.shippingSpeed && !info.shippingSpeed) patch.shippingSpeed = fields.shippingSpeed;
       if (Object.keys(patch).length > 0) updateInfo(patch);
     } catch (err) {

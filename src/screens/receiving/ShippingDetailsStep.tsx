@@ -59,6 +59,12 @@ export function ShippingDetailsStep() {
           placeholder="From the shipping label"
         />
         <Field
+          label="Ship To Zip"
+          value={sd.shipToZip}
+          onChange={(v) => update({ shipToZip: v })}
+          placeholder="Receiving warehouse zip"
+        />
+        <Field
           label="Weight"
           value={sd.weight}
           onChange={(v) => update({ weight: v })}
@@ -90,11 +96,12 @@ function UpsRatePanel() {
   const carrier = session?.carrier;
   const transp = (sd?.transpCode ?? "").toUpperCase();
   const isUps = carrier === "UPS" || transp.includes("UPS");
-  const zip = (sd?.shipFromZip ?? "").match(/\d{5}/)?.[0] ?? "";
+  const originZip = (sd?.shipFromZip ?? "").match(/\d{5}/)?.[0] ?? "";
+  const destZip = (sd?.shipToZip ?? "").match(/\d{5}/)?.[0] ?? "";
   const weightNum = parseFloat((sd?.weight ?? "").match(/(\d+(?:\.\d+)?)/)?.[1] ?? "");
   const speed = sd?.shipSpeed ?? "";
 
-  const eligible = isUps && Boolean(zip) && weightNum > 0;
+  const eligible = isUps && Boolean(originZip) && Boolean(destZip) && weightNum > 0;
 
   useEffect(() => {
     if (!eligible) {
@@ -107,7 +114,8 @@ function UpsRatePanel() {
     const handle = setTimeout(async () => {
       try {
         const result = await getUpsRate({
-          originZip: zip,
+          originZip,
+          destZip,
           weight: String(weightNum),
           shippingSpeed: speed,
         });
@@ -133,7 +141,7 @@ function UpsRatePanel() {
       }
     }, 400);
     return () => clearTimeout(handle);
-  }, [eligible, zip, weightNum, speed, update]);
+  }, [eligible, originZip, destZip, weightNum, speed, update]);
 
   if (!isUps) return null;
 
@@ -148,7 +156,8 @@ function UpsRatePanel() {
 
       {!eligible && (
         <p className="text-sm text-text-secondary">
-          Need <strong>Ship From Zip</strong> and <strong>Weight</strong> above to look up a rate.
+          Need <strong>Ship From Zip</strong>, <strong>Ship To Zip</strong>, and{" "}
+          <strong>Weight</strong> above to look up a rate.
         </p>
       )}
 
