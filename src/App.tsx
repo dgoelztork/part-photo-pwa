@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { HashRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "./stores/auth-store";
 import { Login } from "./screens/Login";
 import { Dashboard } from "./screens/Dashboard";
@@ -31,7 +31,7 @@ export function App() {
   }, [initialize]);
 
   return (
-    <HashRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <Routes>
         <Route
           path="/login"
@@ -56,6 +56,6 @@ export function App() {
           }
         />
       </Routes>
-    </HashRouter>
+    </BrowserRouter>
   );
 }
