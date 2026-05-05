@@ -169,9 +169,8 @@ function SessionCard({
 
   return (
     <div
-      onClick={isSubmitted ? undefined : onResume}
-      className={`bg-surface rounded-xl p-4 shadow-sm flex justify-between items-center
-                  ${isSubmitted ? "opacity-60" : "cursor-pointer active:bg-bg"}`}
+      onClick={onResume}
+      className="bg-surface rounded-xl p-4 shadow-sm flex justify-between items-center cursor-pointer active:bg-bg"
     >
       <div className="flex flex-col gap-0.5">
         <div className="flex items-center gap-2">

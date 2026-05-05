@@ -71,6 +71,7 @@ export function ReviewSubmit() {
 
   if (!session) return null;
 
+  const isSubmitted = session.status === "SUBMITTED";
   const confirmedLines = session.lineItems.filter((l) => l.confirmed);
   const totalReceived = confirmedLines.reduce((sum, l) => sum + l.receivedQty, 0);
   const exceptions = confirmedLines.filter((l) => l.condition !== "good");
@@ -144,12 +145,19 @@ export function ReviewSubmit() {
     <div className="min-h-full flex flex-col gap-4 p-4 max-w-lg mx-auto safe-top safe-bottom">
       <div className="flex items-center gap-3">
         <button
-          onClick={() => goToStep("LINES")}
+          onClick={() => (isSubmitted ? navigate("/") : goToStep("LINES"))}
           className="text-primary text-sm font-medium px-2 py-1 -ml-2"
         >
           &larr; Back
         </button>
-        <h2 className="text-lg font-semibold text-text">Review & Submit</h2>
+        <h2 className="text-lg font-semibold text-text">
+          {isSubmitted ? `PO ${session.poNumber || "—"}` : "Review & Submit"}
+        </h2>
+        {isSubmitted && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-success ml-auto">
+            Submitted
+          </span>
+        )}
       </div>
 
       {/* Exceptions */}
@@ -283,7 +291,7 @@ export function ReviewSubmit() {
       )}
 
       {/* Submit */}
-      {!grpoDocNum && (
+      {!grpoDocNum && !isSubmitted && (
         <div className="mt-auto pt-4 flex flex-col gap-2">
           <button
             onClick={handleSubmit}
@@ -298,6 +306,17 @@ export function ReviewSubmit() {
               No SAP PO linked — session will be saved locally only
             </p>
           )}
+        </div>
+      )}
+
+      {isSubmitted && (
+        <div className="mt-auto pt-4">
+          <button
+            onClick={() => navigate("/")}
+            className="w-full py-3 rounded-xl bg-surface border border-border text-text font-medium"
+          >
+            Back to Dashboard
+          </button>
         </div>
       )}
     </div>

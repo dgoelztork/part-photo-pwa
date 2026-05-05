@@ -51,18 +51,7 @@ export function ReceivingWizard() {
     case "REVIEW":
       return <ReviewSubmit />;
     case "SUBMITTED":
-      return (
-        <div className="min-h-full flex flex-col items-center justify-center p-4 gap-4 safe-top safe-bottom">
-          <div className="text-5xl">&#9989;</div>
-          <h2 className="text-xl font-semibold">Session Submitted</h2>
-          <button
-            onClick={goHome}
-            className="text-primary font-medium"
-          >
-            Back to Dashboard
-          </button>
-        </div>
-      );
+      return <ReviewSubmit />;
     default:
       return <BoxPhotoStep onBack={goHome} />;
   }
