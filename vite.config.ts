@@ -14,6 +14,13 @@ export default defineConfig({
     ...(useMkcert ? [mkcert()] : []),
     tailwindcss(),
     VitePWA({
+      // selfDestroying generates an SW whose only job is to unregister
+      // itself + nuke any caches the previous SW left behind. Anyone who
+      // visited the old version of the app gets its SW cleaned out next
+      // time they hit the page. We're using this to rule out a stale SW
+      // as the cause of iOS failing Add to Home Screen — and because we
+      // don't actually need offline caching for the receiving flow.
+      selfDestroying: true,
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "icons/*.png"],
       manifest: {
