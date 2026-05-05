@@ -1,12 +1,16 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "./stores/auth-store";
 import { Login } from "./screens/Login";
 import { Dashboard } from "./screens/Dashboard";
 import { ReceivingWizard } from "./screens/receiving/ReceivingWizard";
 
-function AuthGate({ children }: { children: ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuthStore();
+export function App() {
+  const { initialize, isAuthenticated, isLoading } = useAuthStore();
+
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
 
   if (isLoading) {
     return (
@@ -16,45 +20,21 @@ function AuthGate({ children }: { children: ReactNode }) {
     );
   }
 
+  // Render Login at the current URL when unauthenticated — never push a
+  // /login route. GitHub Pages 404s on any path that isn't a real file, and
+  // iOS Add to Home Screen rejects an install whose URL returns 404. By
+  // not navigating, the page stays at /part-photo-pwa/ (200 OK) and
+  // installs cleanly. After login, MSAL redirects back to the same base URL.
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Login />;
   }
-
-  return <>{children}</>;
-}
-
-export function App() {
-  const { initialize, isAuthenticated } = useAuthStore();
-
-  useEffect(() => {
-    initialize();
-  }, [initialize]);
 
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL}>
       <Routes>
-        <Route
-          path="/login"
-          element={
-            isAuthenticated ? <Navigate to="/" replace /> : <Login />
-          }
-        />
-        <Route
-          path="/"
-          element={
-            <AuthGate>
-              <Dashboard />
-            </AuthGate>
-          }
-        />
-        <Route
-          path="/receive/:sessionId"
-          element={
-            <AuthGate>
-              <ReceivingWizard />
-            </AuthGate>
-          }
-        />
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/receive/:sessionId" element={<ReceivingWizard />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );
