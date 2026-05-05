@@ -17,9 +17,6 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "icons/*.png"],
       manifest: {
-        // Stable id so iOS/Android treat re-installs as the same PWA
-        // and don't accumulate ghost shortcuts after manifest changes.
-        id: "tork-receiving",
         name: "Part Receiving",
         short_name: "Receiving",
         description: "Warehouse receiving workflow with photo documentation",
