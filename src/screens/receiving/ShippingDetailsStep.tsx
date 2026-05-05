@@ -1,6 +1,8 @@
+import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "../../stores/session-store";
 import { StepHeader } from "../../components/layout/StepHeader";
 import { StepNavigation } from "../../components/layout/StepNavigation";
+import { getUpsRate } from "../../services/api-client";
 
 export function ShippingDetailsStep() {
   const session = useSessionStore((s) => s.getActiveSession());
@@ -64,7 +66,108 @@ export function ShippingDetailsStep() {
         />
       </div>
 
+      <UpsRatePanel />
+
       <StepNavigation onNext={() => goToStep("DOCUMENTS")} />
+    </div>
+  );
+}
+
+/**
+ * Auto-fetched UPS parcel rate. Only renders when carrier=UPS and the
+ * required label fields (ship-from-zip + weight) are present. Debounces
+ * on input change so we don't hammer the proxy while the user types.
+ */
+function UpsRatePanel() {
+  const session = useSessionStore((s) => s.getActiveSession());
+  const update = useSessionStore((s) => s.updateShippingDetails);
+
+  const [status, setStatus] = useState<"idle" | "loading" | "ok" | "err" | "unavailable">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const reqIdRef = useRef(0);
+
+  const sd = session?.shippingDetails;
+  const carrier = session?.carrier;
+  const transp = (sd?.transpCode ?? "").toUpperCase();
+  const isUps = carrier === "UPS" || transp.includes("UPS");
+  const zip = (sd?.shipFromZip ?? "").match(/\d{5}/)?.[0] ?? "";
+  const weightNum = parseFloat((sd?.weight ?? "").match(/(\d+(?:\.\d+)?)/)?.[1] ?? "");
+  const speed = sd?.shipSpeed ?? "";
+
+  const eligible = isUps && Boolean(zip) && weightNum > 0;
+
+  useEffect(() => {
+    if (!eligible) {
+      setStatus("idle");
+      return;
+    }
+    const reqId = ++reqIdRef.current;
+    setStatus("loading");
+    setError(null);
+    const handle = setTimeout(async () => {
+      try {
+        const result = await getUpsRate({
+          originZip: zip,
+          weight: String(weightNum),
+          shippingSpeed: speed,
+        });
+        if (reqId !== reqIdRef.current) return; // superseded
+        if (!result) {
+          setStatus("unavailable");
+          update({ freightRate: "", freightRateLabel: "" });
+          return;
+        }
+        const amount = result.negotiatedAmount ?? result.listAmount;
+        const tier = result.negotiatedAmount != null ? "negotiated" : "list";
+        const label = `UPS ${result.serviceName} (${tier})`;
+        setStatus("ok");
+        update({
+          freightRate: amount.toFixed(2),
+          freightRateLabel: label,
+        });
+      } catch (e) {
+        if (reqId !== reqIdRef.current) return;
+        setStatus("err");
+        setError(e instanceof Error ? e.message : "Rate lookup failed");
+        update({ freightRate: "", freightRateLabel: "" });
+      }
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [eligible, zip, weightNum, speed, update]);
+
+  if (!isUps) return null;
+
+  return (
+    <div className="bg-surface rounded-xl p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-medium text-text-secondary">UPS Estimated Rate</span>
+        {status === "loading" && (
+          <span className="text-xs text-text-secondary animate-pulse">Looking up…</span>
+        )}
+      </div>
+
+      {!eligible && (
+        <p className="text-sm text-text-secondary">
+          Need <strong>Ship From Zip</strong> and <strong>Weight</strong> above to look up a rate.
+        </p>
+      )}
+
+      {eligible && status === "ok" && sd?.freightRate && (
+        <div>
+          <p className="text-2xl font-semibold text-text">${sd.freightRate}</p>
+          <p className="text-xs text-text-secondary">{sd.freightRateLabel}</p>
+        </div>
+      )}
+
+      {eligible && status === "unavailable" && (
+        <p className="text-xs text-text-secondary">
+          UPS rating not configured on the proxy.
+        </p>
+      )}
+
+      {eligible && status === "err" && (
+        <p className="text-xs text-error">Couldn't get rate: {error}</p>
+      )}
     </div>
   );
 }

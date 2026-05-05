@@ -172,6 +172,37 @@ export interface ShippingLabelExtraction {
   shippingSpeed: string | null;
 }
 
+export interface UpsRateResult {
+  serviceCode: string;
+  serviceName: string;
+  currency: string;
+  listAmount: number;
+  negotiatedAmount: number | null;
+  billingWeightLbs: number | null;
+}
+
+/**
+ * Look up a UPS parcel rate. Returns null if rating is not configured on the
+ * proxy (503) — callers should treat this as "rate unavailable" and skip.
+ * Throws on validation errors and upstream UPS failures.
+ */
+export async function getUpsRate(input: {
+  originZip: string;
+  weight: string;
+  shippingSpeed?: string;
+}): Promise<UpsRateResult | null> {
+  const res = await proxyFetch("/api/freight/ups-rate", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  if (res.status === 503) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Rate lookup failed" }));
+    throw new Error(err.message ?? `Rate lookup failed (${res.status})`);
+  }
+  return res.json();
+}
+
 /** Send a shipping-label image to the proxy for OCR + structured extraction. */
 export async function extractShippingLabel(
   image: Blob

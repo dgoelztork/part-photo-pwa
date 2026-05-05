@@ -105,6 +105,8 @@ function createEmptySession(userName: string): ReceivingSession {
       frtTracking: "",
       shipFromZip: "",
       weight: "",
+      freightRate: "",
+      freightRateLabel: "",
     },
     documents: [],
     noDocuments: false,
@@ -302,6 +304,8 @@ export const useSessionStore = create<SessionStore>()(
                 frtTracking: sd.frtTracking || s.shippingInfo.trackingNumber || data.frtTracking,
                 shipFromZip: sd.shipFromZip || s.shippingInfo.shipFrom,
                 weight: sd.weight || s.shippingInfo.weight,
+                freightRate: sd.freightRate,
+                freightRateLabel: sd.freightRateLabel,
               },
             };
           }),

@@ -36,6 +36,7 @@ function buildGoodsReturnComment(session: ReceivingSession): string {
     sd.fob && `fob=${sd.fob}`,
     sd.shipFromZip && `shipFromZip=${sd.shipFromZip}`,
     sd.weight && `weight=${sd.weight}`,
+    sd.freightRate && `rate=$${sd.freightRate}${sd.freightRateLabel ? ` ${sd.freightRateLabel}` : ""}`,
   ].filter(Boolean);
   if (sdParts.length > 0) {
     sections.push(`[SHIPPING] ${sdParts.join(" / ")}`);
@@ -202,6 +203,13 @@ export function ReviewSubmit() {
           value={session.shippingDetails.frtTracking || session.shippingDetails.transpCode || "—"}
           extra={session.shippingDetails.shipSpeed || undefined}
         />
+        {session.shippingDetails.freightRate && (
+          <SummaryRow
+            label="UPS Rate"
+            value={`$${session.shippingDetails.freightRate}`}
+            extra={session.shippingDetails.freightRateLabel || undefined}
+          />
+        )}
         <SummaryRow
           label="Documents"
           value={

@@ -57,6 +57,10 @@ export interface ShippingDetails {
   frtTracking: string;
   shipFromZip: string;
   weight: string;
+  /** UPS-rated freight cost for the parcel (negotiated when available). Empty if not looked up. */
+  freightRate: string;
+  /** Human-readable summary for display + GRPO comment, e.g. "UPS Ground (negotiated)". */
+  freightRateLabel: string;
 }
 
 export interface ReceivingSession {
