@@ -130,6 +130,54 @@ router.post("/", async (req, res) => {
 });
 
 /**
+ * PATCH /api/grpo/:docEntry
+ * Update a posted GRPO. Currently only sets U_GRPODocs (SharePoint folder URL
+ * for the photo evidence) — called by the PWA after the photo upload completes
+ * so SAP users can click through to the folder from the GRPO.
+ */
+router.patch("/:docEntry", async (req, res) => {
+  const { docEntry } = req.params;
+  const { sharePointUrl } = (req.body ?? {}) as { sharePointUrl?: string };
+  const user = (req as any).user;
+
+  if (!sharePointUrl || typeof sharePointUrl !== "string" || !sharePointUrl.trim()) {
+    res.status(400).json({
+      error: "VALIDATION_ERROR",
+      message: "sharePointUrl is required",
+    });
+    return;
+  }
+
+  const url = sharePointUrl.trim();
+  console.log(
+    `[GRPO] Patching DocEntry=${docEntry} U_GRPODocs by ${user?.email ?? "unknown"}`
+  );
+
+  try {
+    const slRes = await slFetch(`/PurchaseDeliveryNotes(${docEntry})`, {
+      method: "PATCH",
+      body: JSON.stringify({ U_GRPODocs: url }),
+    });
+
+    if (!slRes.ok) {
+      const err = await parseSLError(slRes);
+      console.error(`[GRPO] SL PATCH error:`, err);
+      res.status(slRes.status).json({
+        error: "SL_ERROR",
+        code: err.code,
+        message: err.message,
+      });
+      return;
+    }
+
+    res.json({ docEntry: Number(docEntry), updated: true });
+  } catch (err) {
+    console.error(`[GRPO] Error patching ${docEntry}:`, err);
+    res.status(500).json({ error: "INTERNAL_ERROR", message: "Failed to patch GRPO" });
+  }
+});
+
+/**
  * GET /api/grpo/:docEntry
  * Get a posted GRPO by DocEntry.
  */

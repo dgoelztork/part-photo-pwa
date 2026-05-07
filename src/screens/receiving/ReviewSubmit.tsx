@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSessionStore } from "../../stores/session-store";
 import { CONDITION_LABELS, type ReceivingSession } from "../../types/session";
-import { postGRPO } from "../../services/api-client";
+import { postGRPO, patchGrpoDocsUrl } from "../../services/api-client";
 import {
   uploadReceivingSessionToSharePoint,
   type ReceivingUploadResult,
@@ -91,6 +91,7 @@ export function ReviewSubmit() {
     setSubmitError(null);
 
     try {
+      let postedDocEntry: number | null = null;
       if (poDocEntry) {
         // Post GRPO to SAP via proxy
         const grpoLines = confirmedLines
@@ -116,13 +117,15 @@ export function ReviewSubmit() {
         });
 
         setGrpoDocNum(result.docNum);
+        postedDocEntry = result.docEntry;
       }
 
       // Upload photo evidence to SharePoint. Failure here does not invalidate
       // the GRPO that just posted to SAP — surface but don't block.
+      let uploadOutcome: ReceivingUploadResult | null = null;
       try {
-        const result = await uploadReceivingSessionToSharePoint(session, setUploadProgress);
-        setUploadResult(result);
+        uploadOutcome = await uploadReceivingSessionToSharePoint(session, setUploadProgress);
+        setUploadResult(uploadOutcome);
       } catch (err) {
         setUploadResult({
           uploaded: 0,
@@ -131,6 +134,17 @@ export function ReviewSubmit() {
         });
       } finally {
         setUploadProgress(null);
+      }
+
+      // Stamp the SharePoint folder URL onto the posted GRPO (OPDN.U_GRPODocs)
+      // so SAP users can click through to the evidence folder. Best-effort —
+      // a PATCH failure must not undo the successful GRPO + upload.
+      if (postedDocEntry !== null && uploadOutcome?.folderUrl && uploadOutcome.uploaded > 0) {
+        try {
+          await patchGrpoDocsUrl(postedDocEntry, uploadOutcome.folderUrl);
+        } catch (err) {
+          console.warn("[ReviewSubmit] Failed to stamp U_GRPODocs:", err);
+        }
       }
 
       setStatus("SUBMITTED");

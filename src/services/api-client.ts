@@ -156,6 +156,25 @@ export async function postGRPO(payload: {
   return res.json();
 }
 
+/**
+ * Patch a posted GRPO with the SharePoint folder URL for photo evidence.
+ * Lands in OPDN.U_GRPODocs. Best-effort — caller should swallow failures so
+ * a SharePoint upload hiccup doesn't block the receiver from finishing.
+ */
+export async function patchGrpoDocsUrl(
+  docEntry: number,
+  sharePointUrl: string
+): Promise<void> {
+  const res = await proxyFetch(`/api/grpo/${docEntry}`, {
+    method: "PATCH",
+    body: JSON.stringify({ sharePointUrl }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "GRPO patch failed" }));
+    throw new Error(err.message ?? `GRPO patch failed (${res.status})`);
+  }
+}
+
 /** Check if the proxy is reachable. */
 export async function checkProxyHealth(): Promise<boolean> {
   try {

@@ -1,4 +1,4 @@
-import { uploadFile, uploadFileToSharePoint } from "./graph-client";
+import { uploadFile, uploadFileToSharePoint, getSharePointFolderWebUrl } from "./graph-client";
 import { RECEIVING_SHAREPOINT_PATH } from "../config";
 import type { CapturedPhoto } from "../types";
 import type { ReceivingSession, CapturedPhoto as SessionPhoto } from "../types/session";
@@ -134,6 +134,8 @@ export interface ReceivingUploadResult {
   uploaded: number;
   failed: { filename: string; error: string }[];
   folder: string;
+  /** Clickable SharePoint URL for the folder (resolved post-upload). */
+  folderUrl?: string;
 }
 
 /** Upload all photos in a receiving session to SharePoint, organized by PO + datetime. */
@@ -159,7 +161,16 @@ export async function uploadReceivingSessionToSharePoint(
     }
   }
 
-  return { uploaded, failed, folder };
+  let folderUrl: string | undefined;
+  if (uploaded > 0) {
+    try {
+      folderUrl = await getSharePointFolderWebUrl(folder);
+    } catch {
+      // Best-effort — don't fail the upload if webUrl lookup hiccups.
+    }
+  }
+
+  return { uploaded, failed, folder, folderUrl };
 }
 
 /** Try sharing photos via Web Share API (additional fallback). */

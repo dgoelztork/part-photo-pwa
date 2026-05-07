@@ -189,6 +189,17 @@ export async function uploadFileToSharePoint(
   });
 }
 
+/**
+ * Look up a SharePoint folder's clickable webUrl (the URL a user opens in
+ * the browser to view the folder). Folder must already exist.
+ */
+export async function getSharePointFolderWebUrl(folderPath: string): Promise<string> {
+  const driveId = await getSharePointDriveId();
+  const res = await graphFetch(`/drives/${driveId}/root:/${encodePath(folderPath)}`);
+  const item = await res.json();
+  return item.webUrl as string;
+}
+
 async function uploadLargeFileToSharePoint(
   driveId: string,
   itemPath: string,
