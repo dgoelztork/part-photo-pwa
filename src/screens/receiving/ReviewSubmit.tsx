@@ -10,12 +10,12 @@ import {
 } from "../../lib/file-exporter";
 
 /**
- * Build the catch-all string written to OPDN.U_GoodsReturnComment. Anything
- * the receiver entered that doesn't have its own SAP destination today
- * (carrier choice, edited shipping details, box damage, line exceptions, etc.)
- * lands here. Format is plain-text section blocks, easy to read in SAP.
+ * Build the catch-all string written to OPDN.U_GRPOdetails. Anything the
+ * receiver entered that doesn't have its own SAP destination today (carrier
+ * choice, edited shipping details, box damage, line exceptions, etc.) lands
+ * here. Format is plain-text section blocks, easy to read in SAP.
  */
-function buildGoodsReturnComment(session: ReceivingSession): string {
+function buildGrpoDetails(session: ReceivingSession): string {
   const sections: string[] = [];
 
   if (session.boxDamaged) {
@@ -104,14 +104,14 @@ export function ReviewSubmit() {
             warehouse: "01", // Default warehouse
           }));
 
-        const goodsReturnComment = buildGoodsReturnComment(session);
+        const grpoDetails = buildGrpoDetails(session);
         const sd = session.shippingDetails;
         const inboundFrtNum = parseFloat(sd.freightRate);
         const result = await postGRPO({
           vendorCode: session.vendorCode ?? "",
           poDocEntry,
           lines: grpoLines,
-          goodsReturnComment: goodsReturnComment || undefined,
+          grpoDetails: grpoDetails || undefined,
           frtTracking: sd.frtTracking?.trim() || undefined,
           inboundFrt: isFinite(inboundFrtNum) && inboundFrtNum > 0 ? inboundFrtNum : undefined,
         });

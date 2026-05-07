@@ -19,9 +19,9 @@ interface GRPOInput {
   /**
    * Catch-all dump of fields collected by the PWA that don't have a dedicated
    * SAP destination today (box damage notes, shipping detail edits, carrier,
-   * per-line condition/notes, etc.). Written to OPDN.U_GoodsReturnComment.
+   * per-line condition/notes, etc.). Written to OPDN.U_GRPOdetails.
    */
-  goodsReturnComment?: string;
+  grpoDetails?: string;
   /** Tracking number from the shipping label. Written to OPDN.U_pFrtTracking. */
   frtTracking?: string;
   /** UPS-rated inbound freight cost as a number. Written to OPDN.U_InboundFrt. */
@@ -76,8 +76,8 @@ router.post("/", async (req, res) => {
     })),
   };
 
-  if (input.goodsReturnComment && input.goodsReturnComment.trim()) {
-    slPayload.U_GoodsReturnComment = input.goodsReturnComment;
+  if (input.grpoDetails && input.grpoDetails.trim()) {
+    slPayload.U_GRPOdetails = input.grpoDetails;
   }
 
   if (input.frtTracking && input.frtTracking.trim()) {

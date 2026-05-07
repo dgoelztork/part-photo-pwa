@@ -137,9 +137,9 @@ export async function postGRPO(payload: {
   comments?: string;
   /**
    * Catch-all dump of fields collected by the PWA that don't have a dedicated
-   * SAP destination today. Lands in OPDN.U_GoodsReturnComment.
+   * SAP destination today. Lands in OPDN.U_GRPOdetails.
    */
-  goodsReturnComment?: string;
+  grpoDetails?: string;
   /** Tracking number — lands in OPDN.U_pFrtTracking. */
   frtTracking?: string;
   /** UPS-rated freight cost as a number (no $). Lands in OPDN.U_InboundFrt. */

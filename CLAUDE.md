@@ -31,7 +31,8 @@ The receiver walks through these steps in order (status values on `ReceivingSess
 - **SL endpoint name `PurchaseDeliveryNotes` = Goods Receipt PO** (object 20, OPDN/PDN1). Not the customer-facing `DeliveryNotes`.
 - PO lookup: `GET /api/po/:poNumber` → SL `/PurchaseOrders` filtered by `DocNum`.
 - GRPO post: `POST /api/grpo` → SL `/PurchaseDeliveryNotes`. Lines reference the PO via `BaseType=22 / BaseEntry / BaseLine`, so SAP fills item/price/UoM from the PO.
-- Catch-all dump field: anything the wizard captures that doesn't have a dedicated SAP destination today is concatenated into `OPDN.U_GoodsReturnComment` (built by `buildGoodsReturnComment` in `ReviewSubmit.tsx`).
+- Catch-all dump field: anything the wizard captures that doesn't have a dedicated SAP destination today is concatenated into `OPDN.U_GRPOdetails` (built by `buildGrpoDetails` in `ReviewSubmit.tsx`).
+- After GRPO posts and the SharePoint upload completes, the proxy `PATCH /api/grpo/:docEntry` writes the SharePoint folder webUrl to `OPDN.U_GRPODocs` so SAP users can click through to the photo evidence. Best-effort — failure logs a warning but does not undo the GRPO/upload.
 
 ## Auth
 - User signs in with Azure AD via MSAL (`src/lib/auth.ts`, `src/screens/Login.tsx`).
@@ -54,7 +55,7 @@ src/
       ShippingDetailsStep.tsx
       DocumentsStep.tsx
       LineReceivingStep.tsx
-      ReviewSubmit.tsx           # builds U_GoodsReturnComment, posts GRPO
+      ReviewSubmit.tsx           # builds U_GRPOdetails, posts GRPO, then PATCHes U_GRPODocs
   stores/
     auth-store.ts, session-store.ts
   services/
