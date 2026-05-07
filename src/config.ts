@@ -30,3 +30,7 @@ export const DEFAULT_PHOTO_FOLDER = "/Parts Photos";
 // SharePoint destination for receiving photo evidence (folder created per PO+datetime).
 export const RECEIVING_SHAREPOINT_HOST = "torksys.sharepoint.com";
 export const RECEIVING_SHAREPOINT_PATH = "05 - Operations/05.2 Warehouse/Receiving Docs";
+
+// Second copy of just the per-line product photos, named by part number, for
+// later AI editing / marketing / web use. Same SharePoint host as receiving.
+export const WEB_IMAGES_SHAREPOINT_PATH = "05 - Operations/05.2 Warehouse/Web images";

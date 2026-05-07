@@ -1,5 +1,5 @@
 import { uploadFile, uploadFileToSharePoint, getSharePointFolderWebUrl } from "./graph-client";
-import { RECEIVING_SHAREPOINT_PATH } from "../config";
+import { RECEIVING_SHAREPOINT_PATH, WEB_IMAGES_SHAREPOINT_PATH } from "../config";
 import type { CapturedPhoto } from "../types";
 import type { ReceivingSession, CapturedPhoto as SessionPhoto } from "../types/session";
 import JSZip from "jszip";
@@ -59,9 +59,14 @@ export async function downloadAsZip(
 // ---- Receiving session SharePoint upload ----
 
 interface UploadEntry {
+  folder: string;
   blob: Blob;
   filename: string;
   contentType: string;
+  /** Graph DriveItem conflict behavior. Defaults to "replace" (overwrite). */
+  conflictBehavior?: "replace" | "rename" | "fail";
+  /** Tag identifying which destination this entry belongs to (for result accounting). */
+  destination: "receiving" | "web-images";
 }
 
 /** Format a Date as `YYYY-MM-DD_HH-MM-SS` (filename-safe, no colons or slashes). */
@@ -94,9 +99,11 @@ function buildUploadPlan(
       if (!p.blob || p.blob.size === 0) return; // skip stripped/persisted-empty blobs
       const idxSuffix = photos.length > 1 ? `_${String(i + 1).padStart(2, "0")}` : "";
       entries.push({
+        folder,
         blob: p.blob,
         filename: `${prefix}_${section}_${ts}${idxSuffix}.${extFor(p.blob)}`,
         contentType: mimeFor(p.blob),
+        destination: "receiving",
       });
     });
   };
@@ -108,9 +115,11 @@ function buildUploadPlan(
   for (const doc of session.documents) {
     if (!doc.photo.blob || doc.photo.blob.size === 0) continue;
     entries.push({
+      folder,
       blob: doc.photo.blob,
       filename: `${prefix}_DOC_${doc.documentType.toUpperCase()}_${ts}.${extFor(doc.photo.blob)}`,
       contentType: mimeFor(doc.photo.blob),
+      destination: "receiving",
     });
   }
 
@@ -119,10 +128,26 @@ function buildUploadPlan(
     line.photos.forEach((p, i) => {
       if (!p.blob || p.blob.size === 0) return;
       const idxSuffix = line.photos.length > 1 ? `_${String(i + 1).padStart(2, "0")}` : "";
+
+      // Primary copy — into the per-PO receiving folder.
       entries.push({
+        folder,
         blob: p.blob,
         filename: `${prefix}_LINE_${String(line.lineNum).padStart(3, "0")}_${safeItem}_${ts}${idxSuffix}.${extFor(p.blob)}`,
         contentType: mimeFor(p.blob),
+        destination: "receiving",
+      });
+
+      // Second copy — flat folder named by part number, for marketing/web use.
+      // Use Graph "rename" so older shots of the same part aren't clobbered;
+      // duplicates land as "M106412 1.jpg", "M106412 2.jpg" automatically.
+      entries.push({
+        folder: WEB_IMAGES_SHAREPOINT_PATH,
+        blob: p.blob,
+        filename: `${safeItem}${idxSuffix}.${extFor(p.blob)}`,
+        contentType: mimeFor(p.blob),
+        conflictBehavior: "rename",
+        destination: "web-images",
       });
     });
   }
@@ -131,32 +156,45 @@ function buildUploadPlan(
 }
 
 export interface ReceivingUploadResult {
+  /** Files written to the per-PO receiving folder. */
   uploaded: number;
-  failed: { filename: string; error: string }[];
+  /** Files written to the per-part web-images folder (second copy of line photos only). */
+  webImagesUploaded: number;
+  failed: { filename: string; error: string; destination: "receiving" | "web-images" }[];
   folder: string;
-  /** Clickable SharePoint URL for the folder (resolved post-upload). */
+  /** Clickable SharePoint URL for the receiving folder (resolved post-upload). */
   folderUrl?: string;
 }
 
-/** Upload all photos in a receiving session to SharePoint, organized by PO + datetime. */
+/** Upload all photos in a receiving session to SharePoint, organized by PO + datetime.
+ *  Line photos additionally land in a flat per-part folder for marketing/web use. */
 export async function uploadReceivingSessionToSharePoint(
   session: ReceivingSession,
   onProgress?: (progress: UploadProgress) => void
 ): Promise<ReceivingUploadResult> {
   const { folder, entries } = buildUploadPlan(session, new Date());
-  const failed: { filename: string; error: string }[] = [];
+  const failed: ReceivingUploadResult["failed"] = [];
   let uploaded = 0;
+  let webImagesUploaded = 0;
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     onProgress?.({ current: i + 1, total: entries.length, fileName: entry.filename });
     try {
-      await uploadFileToSharePoint(folder, entry.filename, entry.blob, entry.contentType);
-      uploaded++;
+      await uploadFileToSharePoint(
+        entry.folder,
+        entry.filename,
+        entry.blob,
+        entry.contentType,
+        entry.conflictBehavior ?? "replace",
+      );
+      if (entry.destination === "web-images") webImagesUploaded++;
+      else uploaded++;
     } catch (err) {
       failed.push({
         filename: entry.filename,
         error: err instanceof Error ? err.message : String(err),
+        destination: entry.destination,
       });
     }
   }
@@ -170,7 +208,7 @@ export async function uploadReceivingSessionToSharePoint(
     }
   }
 
-  return { uploaded, failed, folder, folderUrl };
+  return { uploaded, webImagesUploaded, failed, folder, folderUrl };
 }
 
 /** Try sharing photos via Web Share API (additional fallback). */

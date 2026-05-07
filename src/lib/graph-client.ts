@@ -165,12 +165,17 @@ async function ensureSharePointFolder(driveId: string, folderPath: string): Prom
   }
 }
 
-/** Upload a file to a path under the configured receiving SharePoint folder. */
+/** Upload a file to a path under the configured receiving SharePoint folder.
+ *  conflictBehavior: Graph DriveItem conflict behavior. Defaults to "replace"
+ *  (the implicit small-file PUT behavior). Pass "rename" to keep existing
+ *  files untouched and have Graph append a numeric suffix to the new upload —
+ *  used by the per-part web images folder so older shots aren't clobbered. */
 export async function uploadFileToSharePoint(
   folderPath: string,
   fileName: string,
   blob: Blob,
-  contentType: string = "image/jpeg"
+  contentType: string = "image/jpeg",
+  conflictBehavior: "replace" | "rename" | "fail" = "replace"
 ): Promise<void> {
   const driveId = await getSharePointDriveId();
   await ensureSharePointFolder(driveId, folderPath);
@@ -178,11 +183,12 @@ export async function uploadFileToSharePoint(
   const itemPath = `${folderPath}/${fileName}`;
 
   if (blob.size > 4 * 1024 * 1024) {
-    await uploadLargeFileToSharePoint(driveId, itemPath, blob, contentType);
+    await uploadLargeFileToSharePoint(driveId, itemPath, blob, contentType, conflictBehavior);
     return;
   }
 
-  await graphFetch(`/drives/${driveId}/root:/${encodePath(itemPath)}:/content`, {
+  const qs = `?@microsoft.graph.conflictBehavior=${conflictBehavior}`;
+  await graphFetch(`/drives/${driveId}/root:/${encodePath(itemPath)}:/content${qs}`, {
     method: "PUT",
     headers: { "Content-Type": contentType },
     body: blob,
@@ -204,7 +210,8 @@ async function uploadLargeFileToSharePoint(
   driveId: string,
   itemPath: string,
   blob: Blob,
-  _contentType: string
+  _contentType: string,
+  conflictBehavior: "replace" | "rename" | "fail" = "rename"
 ): Promise<void> {
   const sessionRes = await graphFetch(
     `/drives/${driveId}/root:/${encodePath(itemPath)}:/createUploadSession`,
@@ -212,7 +219,7 @@ async function uploadLargeFileToSharePoint(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        item: { "@microsoft.graph.conflictBehavior": "rename" },
+        item: { "@microsoft.graph.conflictBehavior": conflictBehavior },
       }),
     }
   );

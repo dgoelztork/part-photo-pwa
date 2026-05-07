@@ -129,7 +129,12 @@ export function ReviewSubmit() {
       } catch (err) {
         setUploadResult({
           uploaded: 0,
-          failed: [{ filename: "(upload aborted)", error: err instanceof Error ? err.message : String(err) }],
+          webImagesUploaded: 0,
+          failed: [{
+            filename: "(upload aborted)",
+            error: err instanceof Error ? err.message : String(err),
+            destination: "receiving",
+          }],
           folder: "",
         });
       } finally {
@@ -289,17 +294,24 @@ export function ReviewSubmit() {
         <div className="p-4 rounded-xl bg-green-50 border border-green-200 text-center animate-slide-in">
           <p className="text-lg font-bold text-success">GRPO Posted</p>
           <p className="text-sm text-text-secondary">Document #{grpoDocNum}</p>
-          {uploadResult && uploadResult.failed.length === 0 && (
-            <p className="text-xs text-text-secondary mt-2">
-              {uploadResult.uploaded} photo{uploadResult.uploaded !== 1 ? "s" : ""} uploaded to SharePoint
-            </p>
-          )}
-          {uploadResult && uploadResult.failed.length > 0 && (
-            <p className="text-xs text-error mt-2">
-              {uploadResult.uploaded} uploaded, {uploadResult.failed.length} failed —
-              {" "}{uploadResult.failed[0].error}
-            </p>
-          )}
+          {uploadResult && (() => {
+            // Receiving-folder failures matter to the receiver; web-images are a
+            // background secondary copy, surface those only via console.
+            const recvFailed = uploadResult.failed.filter((f) => f.destination === "receiving");
+            const webFailed = uploadResult.failed.filter((f) => f.destination === "web-images");
+            if (webFailed.length > 0) {
+              console.warn(`[ReviewSubmit] ${webFailed.length} web-image upload(s) failed`, webFailed);
+            }
+            return recvFailed.length === 0 ? (
+              <p className="text-xs text-text-secondary mt-2">
+                {uploadResult.uploaded} photo{uploadResult.uploaded !== 1 ? "s" : ""} uploaded to SharePoint
+              </p>
+            ) : (
+              <p className="text-xs text-error mt-2">
+                {uploadResult.uploaded} uploaded, {recvFailed.length} failed — {recvFailed[0].error}
+              </p>
+            );
+          })()}
           <button
             onClick={() => navigate("/")}
             className="mt-3 px-6 py-2 rounded-lg bg-primary text-white font-medium"

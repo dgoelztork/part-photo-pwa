@@ -33,6 +33,7 @@ The receiver walks through these steps in order (status values on `ReceivingSess
 - GRPO post: `POST /api/grpo` → SL `/PurchaseDeliveryNotes`. Lines reference the PO via `BaseType=22 / BaseEntry / BaseLine`, so SAP fills item/price/UoM from the PO.
 - Catch-all dump field: anything the wizard captures that doesn't have a dedicated SAP destination today is concatenated into `OPDN.U_GRPOdetails` (built by `buildGrpoDetails` in `ReviewSubmit.tsx`).
 - After GRPO posts and the SharePoint upload completes, the proxy `PATCH /api/grpo/:docEntry` writes the SharePoint folder webUrl to `OPDN.U_GRPODocs` so SAP users can click through to the photo evidence. Best-effort — failure logs a warning but does not undo the GRPO/upload.
+- Per-line product photos are saved a **second** time to `WEB_IMAGES_SHAREPOINT_PATH` (flat folder, named by part number — e.g. `M106412.jpg`) for AI/marketing/web reuse. Built into `buildUploadPlan` as additional entries with `conflictBehavior: "rename"` so older shots aren't clobbered. Box / label / packing-slip / document photos are NOT duplicated.
 
 ## Auth
 - User signs in with Azure AD via MSAL (`src/lib/auth.ts`, `src/screens/Login.tsx`).
