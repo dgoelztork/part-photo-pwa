@@ -438,6 +438,25 @@ export const useSessionStore = create<SessionStore>()(
     {
       name: "receiving-sessions",
       storage: idbStorage,
+      // v1 added per-line nameplatePhotos and quantityPhotos. Pre-v1 sessions
+      // have undefined for those arrays; backfill so resume/render doesn't crash.
+      version: 1,
+      migrate: (persistedState, fromVersion) => {
+        const state = (persistedState ?? {}) as { sessions?: ReceivingSession[] };
+        if (fromVersion < 1 && Array.isArray(state.sessions)) {
+          state.sessions = state.sessions.map((s) => ({
+            ...s,
+            lineItems: Array.isArray(s.lineItems)
+              ? s.lineItems.map((l) => ({
+                  ...l,
+                  nameplatePhotos: Array.isArray(l.nameplatePhotos) ? l.nameplatePhotos : [],
+                  quantityPhotos: Array.isArray(l.quantityPhotos) ? l.quantityPhotos : [],
+                }))
+              : [],
+          }));
+        }
+        return state as unknown as SessionStore;
+      },
       partialize: (state) => {
         // Strip blob data from photos for persistence (blobs can't be serialized)
         // Photos will need to be re-captured if the session is resumed after app close
