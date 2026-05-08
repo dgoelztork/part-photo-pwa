@@ -153,7 +153,7 @@ function buildUploadPlan(
       });
     });
 
-    // Nameplate / label / stamp photos — receiving folder only, no marketing copy.
+    // Nameplate / label / stamp photos — receiving folder + Web images second copy.
     line.nameplatePhotos.forEach((p, i) => {
       if (!p.blob || p.blob.size === 0) return;
       const idxSuffix = line.nameplatePhotos.length > 1 ? `_${String(i + 1).padStart(2, "0")}` : "";
@@ -163,6 +163,17 @@ function buildUploadPlan(
         filename: `${linePrefix}_NAMEPLATE_${ts}${idxSuffix}.${extFor(p.blob)}`,
         contentType: mimeFor(p.blob),
         destination: "receiving",
+      });
+
+      // Web images second copy — suffix _nameplate so it's distinguishable from
+      // the product shot. "rename" so older shots aren't clobbered.
+      entries.push({
+        folder: WEB_IMAGES_SHAREPOINT_PATH,
+        blob: p.blob,
+        filename: `${safeItem}_nameplate${idxSuffix}.${extFor(p.blob)}`,
+        contentType: mimeFor(p.blob),
+        conflictBehavior: "rename",
+        destination: "web-images",
       });
     });
 
