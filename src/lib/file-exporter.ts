@@ -125,6 +125,8 @@ function buildUploadPlan(
 
   for (const line of session.lineItems) {
     const safeItem = line.itemCode.replace(/[^A-Za-z0-9_-]/g, "");
+    const linePrefix = `${prefix}_LINE_${String(line.lineNum).padStart(3, "0")}_${safeItem}`;
+
     line.photos.forEach((p, i) => {
       if (!p.blob || p.blob.size === 0) return;
       const idxSuffix = line.photos.length > 1 ? `_${String(i + 1).padStart(2, "0")}` : "";
@@ -133,7 +135,7 @@ function buildUploadPlan(
       entries.push({
         folder,
         blob: p.blob,
-        filename: `${prefix}_LINE_${String(line.lineNum).padStart(3, "0")}_${safeItem}_${ts}${idxSuffix}.${extFor(p.blob)}`,
+        filename: `${linePrefix}_${ts}${idxSuffix}.${extFor(p.blob)}`,
         contentType: mimeFor(p.blob),
         destination: "receiving",
       });
@@ -148,6 +150,32 @@ function buildUploadPlan(
         contentType: mimeFor(p.blob),
         conflictBehavior: "rename",
         destination: "web-images",
+      });
+    });
+
+    // Nameplate / label / stamp photos — receiving folder only, no marketing copy.
+    line.nameplatePhotos.forEach((p, i) => {
+      if (!p.blob || p.blob.size === 0) return;
+      const idxSuffix = line.nameplatePhotos.length > 1 ? `_${String(i + 1).padStart(2, "0")}` : "";
+      entries.push({
+        folder,
+        blob: p.blob,
+        filename: `${linePrefix}_NAMEPLATE_${ts}${idxSuffix}.${extFor(p.blob)}`,
+        contentType: mimeFor(p.blob),
+        destination: "receiving",
+      });
+    });
+
+    // Full-quantity photos — receiving folder only, no marketing copy.
+    line.quantityPhotos.forEach((p, i) => {
+      if (!p.blob || p.blob.size === 0) return;
+      const idxSuffix = line.quantityPhotos.length > 1 ? `_${String(i + 1).padStart(2, "0")}` : "";
+      entries.push({
+        folder,
+        blob: p.blob,
+        filename: `${linePrefix}_QTY_${ts}${idxSuffix}.${extFor(p.blob)}`,
+        contentType: mimeFor(p.blob),
+        destination: "receiving",
       });
     });
   }

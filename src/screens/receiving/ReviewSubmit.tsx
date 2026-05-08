@@ -82,7 +82,10 @@ export function ReviewSubmit() {
     session.labelPhotos.length +
     session.packingSlipPhotos.length +
     session.documents.length +
-    session.lineItems.reduce((sum, l) => sum + l.photos.length, 0);
+    session.lineItems.reduce(
+      (sum, l) => sum + l.photos.length + l.nameplatePhotos.length + l.quantityPhotos.length,
+      0,
+    );
 
   const poDocEntry = session.poDocEntry;
 

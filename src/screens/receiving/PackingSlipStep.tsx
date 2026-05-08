@@ -67,6 +67,8 @@ export function PackingSlipStep() {
         condition: "good",
         notes: "",
         photos: [],
+        nameplatePhotos: [],
+        quantityPhotos: [],
         confirmed: false,
         freeText: l.freeText,
       }));

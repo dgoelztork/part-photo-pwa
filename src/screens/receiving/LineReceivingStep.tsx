@@ -80,7 +80,7 @@ export function LineReceivingStep() {
               {line.previouslyReceivedQty > 0 && (
                 <span>Prev: {line.previouslyReceivedQty}</span>
               )}
-              <span>Photos: {line.photos.length}</span>
+              <span>Photos: {line.photos.length + line.nameplatePhotos.length + line.quantityPhotos.length}</span>
             </div>
           </button>
         ))}
@@ -111,6 +111,10 @@ function LineDetailView({
   const updateLine = useSessionStore((s) => s.updateLine);
   const addLinePhoto = useSessionStore((s) => s.addLinePhoto);
   const removeLinePhoto = useSessionStore((s) => s.removeLinePhoto);
+  const addLineNameplatePhoto = useSessionStore((s) => s.addLineNameplatePhoto);
+  const removeLineNameplatePhoto = useSessionStore((s) => s.removeLineNameplatePhoto);
+  const addLineQuantityPhoto = useSessionStore((s) => s.addLineQuantityPhoto);
+  const removeLineQuantityPhoto = useSessionStore((s) => s.removeLineQuantityPhoto);
   const confirmLine = useSessionStore((s) => s.confirmLine);
 
   const handleConfirm = () => {
@@ -150,15 +154,37 @@ function LineDetailView({
         </div>
       )}
 
-      {/* Photo capture */}
-      <CameraCapture
-        onCapture={(photo) => addLinePhoto(line.lineNum, photo)}
-        label="Photograph Item"
-      />
-      <PhotoGallery
-        photos={line.photos}
-        onDelete={(id) => removeLinePhoto(line.lineNum, id)}
-      />
+      {/* Photo capture — three groups: item (required), nameplate (optional), full quantity (optional) */}
+      <div className="flex flex-col gap-2">
+        <CameraCapture
+          onCapture={(photo) => addLinePhoto(line.lineNum, photo)}
+          label="Photograph Item"
+        />
+        <PhotoGallery
+          photos={line.photos}
+          onDelete={(id) => removeLinePhoto(line.lineNum, id)}
+        />
+      </div>
+      <div className="flex flex-col gap-2">
+        <CameraCapture
+          onCapture={(photo) => addLineNameplatePhoto(line.lineNum, photo)}
+          label="Photograph Nameplate"
+        />
+        <PhotoGallery
+          photos={line.nameplatePhotos}
+          onDelete={(id) => removeLineNameplatePhoto(line.lineNum, id)}
+        />
+      </div>
+      <div className="flex flex-col gap-2">
+        <CameraCapture
+          onCapture={(photo) => addLineQuantityPhoto(line.lineNum, photo)}
+          label="Photograph Full Quantity"
+        />
+        <PhotoGallery
+          photos={line.quantityPhotos}
+          onDelete={(id) => removeLineQuantityPhoto(line.lineNum, id)}
+        />
+      </div>
 
       {/* Quantity */}
       <div className="bg-surface rounded-xl p-4 shadow-sm">

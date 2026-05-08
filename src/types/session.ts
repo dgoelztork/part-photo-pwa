@@ -44,7 +44,12 @@ export interface ReceivingLine {
   receivedQty: number;
   condition: ItemCondition;
   notes: string;
+  /** Product/item photos. Required for confirm. Also copied to the per-part Web images folder. */
   photos: CapturedPhoto[];
+  /** Nameplate / label / stamp photos of the part itself. Optional. Receiving folder only. */
+  nameplatePhotos: CapturedPhoto[];
+  /** Photo(s) showing the full quantity received, to document the count. Optional. Receiving folder only. */
+  quantityPhotos: CapturedPhoto[];
   confirmed: boolean;
   // POR1.FreeTxt from the PO line, surfaced read-only for the receiver
   freeText: string;

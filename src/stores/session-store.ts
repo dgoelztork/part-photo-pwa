@@ -73,6 +73,10 @@ interface SessionStore {
   updateLine: (lineNum: number, updates: Partial<ReceivingLine>) => void;
   addLinePhoto: (lineNum: number, photo: CapturedPhoto) => void;
   removeLinePhoto: (lineNum: number, photoId: string) => void;
+  addLineNameplatePhoto: (lineNum: number, photo: CapturedPhoto) => void;
+  removeLineNameplatePhoto: (lineNum: number, photoId: string) => void;
+  addLineQuantityPhoto: (lineNum: number, photo: CapturedPhoto) => void;
+  removeLineQuantityPhoto: (lineNum: number, photoId: string) => void;
   confirmLine: (lineNum: number) => void;
 }
 
@@ -381,6 +385,46 @@ export const useSessionStore = create<SessionStore>()(
           })),
         }));
       },
+      addLineNameplatePhoto: (lineNum: number, photo: CapturedPhoto) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
+            lineItems: s.lineItems.map((l) =>
+              l.lineNum === lineNum ? { ...l, nameplatePhotos: [...l.nameplatePhotos, photo] } : l
+            ),
+          })),
+        }));
+      },
+      removeLineNameplatePhoto: (lineNum: number, photoId: string) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
+            lineItems: s.lineItems.map((l) =>
+              l.lineNum === lineNum
+                ? { ...l, nameplatePhotos: l.nameplatePhotos.filter((p) => p.id !== photoId) }
+                : l
+            ),
+          })),
+        }));
+      },
+      addLineQuantityPhoto: (lineNum: number, photo: CapturedPhoto) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
+            lineItems: s.lineItems.map((l) =>
+              l.lineNum === lineNum ? { ...l, quantityPhotos: [...l.quantityPhotos, photo] } : l
+            ),
+          })),
+        }));
+      },
+      removeLineQuantityPhoto: (lineNum: number, photoId: string) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
+            lineItems: s.lineItems.map((l) =>
+              l.lineNum === lineNum
+                ? { ...l, quantityPhotos: l.quantityPhotos.filter((p) => p.id !== photoId) }
+                : l
+            ),
+          })),
+        }));
+      },
       confirmLine: (lineNum: number) => {
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
@@ -408,6 +452,8 @@ export const useSessionStore = create<SessionStore>()(
             lineItems: s.lineItems.map((l) => ({
               ...l,
               photos: l.photos.map(stripBlob),
+              nameplatePhotos: l.nameplatePhotos.map(stripBlob),
+              quantityPhotos: l.quantityPhotos.map(stripBlob),
             })),
           })),
         };

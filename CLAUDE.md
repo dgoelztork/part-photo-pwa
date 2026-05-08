@@ -22,7 +22,7 @@ The receiver walks through these steps in order (status values on `ReceivingSess
 3. `PACKING_SLIP` — capture packing slip (or check "None included") and look up the PO number. After lookup, surfaces the PO header notes (`U_pImportantInfo`, `U_pInternalComments`, `U_exponotes`) read-only.
 4. `SHIPPING_DETAILS` — verify/edit the OPOR shipping fields (`TrnspCode`, `U_ShipSpeed`, `U_pFOB`, `U_pFrtChargeType`, `U_pFrtTracking`).
 5. `DOCUMENTS` — MTRs, CoCs, etc., or check "No documents."
-6. `LINES` — per-line receive: photo + qty + condition + notes. Surfaces `POR1.FreeTxt` from the PO line.
+6. `LINES` — per-line receive: three photo groups (item, nameplate, full-quantity) + qty + condition + notes. Only item photos are required to confirm a line; nameplate and quantity photos are optional. Surfaces `POR1.FreeTxt` from the PO line.
 7. `REVIEW` → `SUBMITTED` — posts the GRPO and uploads photos to SharePoint.
 
 `STEP_ORDER` in `src/types/session.ts` drives the progress bar in `StepHeader`.
@@ -33,7 +33,7 @@ The receiver walks through these steps in order (status values on `ReceivingSess
 - GRPO post: `POST /api/grpo` → SL `/PurchaseDeliveryNotes`. Lines reference the PO via `BaseType=22 / BaseEntry / BaseLine`, so SAP fills item/price/UoM from the PO.
 - Catch-all dump field: anything the wizard captures that doesn't have a dedicated SAP destination today is concatenated into `OPDN.U_GRPOdetails` (built by `buildGrpoDetails` in `ReviewSubmit.tsx`).
 - After GRPO posts and the SharePoint upload completes, the proxy `PATCH /api/grpo/:docEntry` writes the SharePoint folder webUrl to `OPDN.U_GRPODocs` so SAP users can click through to the photo evidence. Best-effort — failure logs a warning but does not undo the GRPO/upload.
-- Per-line product photos are saved a **second** time to `WEB_IMAGES_SHAREPOINT_PATH` (flat folder, named by part number — e.g. `M106412.jpg`) for AI/marketing/web reuse. Built into `buildUploadPlan` as additional entries with `conflictBehavior: "rename"` so older shots aren't clobbered. Box / label / packing-slip / document photos are NOT duplicated.
+- Per-line **item** photos are saved a **second** time to `WEB_IMAGES_SHAREPOINT_PATH` (flat folder, named by part number — e.g. `M106412.jpg`) for AI/marketing/web reuse. Built into `buildUploadPlan` as additional entries with `conflictBehavior: "rename"` so older shots aren't clobbered. Nameplate, quantity, box, label, packing-slip, and document photos are NOT duplicated to web images. Filename suffixes in the receiving folder distinguish the groups: `_LINE_NNN_<itemcode>_<ts>.jpg` (item), `_NAMEPLATE_<ts>.jpg`, `_QTY_<ts>.jpg`.
 
 ## Auth
 - User signs in with Azure AD via MSAL (`src/lib/auth.ts`, `src/screens/Login.tsx`).
