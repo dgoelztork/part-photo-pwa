@@ -63,9 +63,6 @@ router.post("/", async (req, res) => {
   const slPayload: Record<string, unknown> = {
     DocDate: new Date().toISOString().slice(0, 10),
     CardCode: input.vendorCode,
-    Comments:
-      input.comments ??
-      `Received via Part Receiving PWA by ${user?.email ?? "unknown"}`,
     DocumentLines: input.lines.map((line) => ({
       BaseEntry: line.baseEntry,
       BaseLine: line.baseLine,
@@ -76,9 +73,21 @@ router.post("/", async (req, res) => {
     })),
   };
 
-  if (input.grpoDetails && input.grpoDetails.trim()) {
-    slPayload.U_GRPOdetails = input.grpoDetails;
+  // Comments is intentionally omitted unless the caller passes one — SAP
+  // auto-populates it with "Based on Purchase Orders <DocNum>" when the
+  // GRPO references a PO via BaseEntry/BaseType=22. Overwriting that breaks
+  // the document-chain breadcrumb the Related Documents view follows.
+  if (input.comments && input.comments.trim()) {
+    slPayload.Comments = input.comments;
   }
+
+  // Receiver attribution lives in U_GRPOdetails (our field, safe to overwrite)
+  // alongside the catch-all dump. Always set so we can trace who received.
+  const detailsParts = [
+    input.grpoDetails?.trim(),
+    `[Received via PWA by ${user?.email ?? "unknown"}]`,
+  ].filter(Boolean) as string[];
+  slPayload.U_GRPOdetails = detailsParts.join("\n");
 
   if (input.frtTracking && input.frtTracking.trim()) {
     slPayload.U_pFrtTracking = input.frtTracking.trim();
