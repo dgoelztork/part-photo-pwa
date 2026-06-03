@@ -5,6 +5,7 @@ import { StepNavigation } from "../../components/layout/StepNavigation";
 import { CameraCapture } from "../../components/camera/CameraCapture";
 import { PhotoGallery } from "../../components/camera/PhotoGallery";
 import { extractShippingLabel } from "../../services/api-client";
+import { decodeShippingLabelBarcode } from "../../lib/barcode-reader";
 import type { CapturedPhoto } from "../../types/session";
 
 interface BoxPhotoStepProps {
@@ -30,22 +31,35 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
     session.boxPhotos.length >= 1 && session.labelPhotos.length >= 1 && !extracting;
   const info = session.shippingInfo;
 
-  // OCR the shipping label; fill blanks only so a manual entry isn't overwritten.
-  // The structured fields aren't shown on this step anymore — they're consumed
-  // later as defaults on the SHIPPING_DETAILS step.
+  // Hybrid extraction: barcode scan (local, fast, 100% accurate when it
+  // decodes) and vision OCR (remote, fills the fields the barcode doesn't
+  // carry) run in parallel. Barcode wins for tracking + carrier; OCR
+  // supplies weight, ZIPs, and service speed. Then fill blanks only so a
+  // manual entry isn't overwritten. The structured fields aren't shown on
+  // this step anymore — they're consumed later as defaults on the
+  // SHIPPING_DETAILS step.
   const handleLabelCapture = async (photo: CapturedPhoto) => {
     addLabelPhoto(photo);
     setExtractError(null);
     setExtracting(true);
     try {
-      const fields = await extractShippingLabel(photo.blob);
+      const [barcodeHit, ocrFields] = await Promise.all([
+        decodeShippingLabelBarcode(photo.blob),
+        extractShippingLabel(photo.blob),
+      ]);
+
+      // Barcode-derived tracking + carrier override OCR equivalents.
+      // Everything else comes from OCR.
+      const carrier = barcodeHit?.carrier ?? ocrFields.carrier;
+      const trackingNumber = barcodeHit?.trackingNumber ?? ocrFields.trackingNumber;
+
       const patch: Partial<typeof info> = {};
-      if (fields.carrier && !info.carrier) patch.carrier = fields.carrier;
-      if (fields.trackingNumber && !info.trackingNumber) patch.trackingNumber = fields.trackingNumber;
-      if (fields.weight && !info.weight) patch.weight = fields.weight;
-      if (fields.shipFrom && !info.shipFrom) patch.shipFrom = fields.shipFrom;
-      if (fields.shipToZip && !info.shipToZip) patch.shipToZip = fields.shipToZip;
-      if (fields.shippingSpeed && !info.shippingSpeed) patch.shippingSpeed = fields.shippingSpeed;
+      if (carrier && !info.carrier) patch.carrier = carrier;
+      if (trackingNumber && !info.trackingNumber) patch.trackingNumber = trackingNumber;
+      if (ocrFields.weight && !info.weight) patch.weight = ocrFields.weight;
+      if (ocrFields.shipFrom && !info.shipFrom) patch.shipFrom = ocrFields.shipFrom;
+      if (ocrFields.shipToZip && !info.shipToZip) patch.shipToZip = ocrFields.shipToZip;
+      if (ocrFields.shippingSpeed && !info.shippingSpeed) patch.shippingSpeed = ocrFields.shippingSpeed;
       if (Object.keys(patch).length > 0) updateInfo(patch);
     } catch (err) {
       setExtractError(err instanceof Error ? err.message : "Extraction failed");
