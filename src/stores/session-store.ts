@@ -438,12 +438,13 @@ export const useSessionStore = create<SessionStore>()(
     {
       name: "receiving-sessions",
       storage: idbStorage,
-      // v1 added per-line nameplatePhotos and quantityPhotos. Pre-v1 sessions
-      // have undefined for those arrays; backfill so resume/render doesn't crash.
-      version: 1,
+      // v1 added per-line nameplatePhotos and quantityPhotos.
+      // v2 added per-line boxCount. Pre-vN sessions have undefined for those
+      // fields; backfill so resume/render doesn't crash.
+      version: 2,
       migrate: (persistedState, fromVersion) => {
         const state = (persistedState ?? {}) as { sessions?: ReceivingSession[] };
-        if (fromVersion < 1 && Array.isArray(state.sessions)) {
+        if (fromVersion < 2 && Array.isArray(state.sessions)) {
           state.sessions = state.sessions.map((s) => ({
             ...s,
             lineItems: Array.isArray(s.lineItems)
@@ -451,6 +452,7 @@ export const useSessionStore = create<SessionStore>()(
                   ...l,
                   nameplatePhotos: Array.isArray(l.nameplatePhotos) ? l.nameplatePhotos : [],
                   quantityPhotos: Array.isArray(l.quantityPhotos) ? l.quantityPhotos : [],
+                  boxCount: typeof l.boxCount === "number" && l.boxCount > 0 ? l.boxCount : 1,
                 }))
               : [],
           }));

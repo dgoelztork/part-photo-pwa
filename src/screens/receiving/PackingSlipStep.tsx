@@ -64,6 +64,7 @@ export function PackingSlipStep() {
         previouslyReceivedQty: l.orderedQty - l.openQty,
         openQty: l.openQty,
         receivedQty: l.openQty,
+        boxCount: 1,
         condition: "good",
         notes: "",
         photos: [],

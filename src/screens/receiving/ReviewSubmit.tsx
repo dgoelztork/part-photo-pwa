@@ -49,10 +49,12 @@ function buildGrpoDetails(session: ReceivingSession): string {
   for (const line of session.lineItems) {
     if (!line.confirmed) continue;
     const note = line.notes.trim();
-    if (line.condition !== "good" || note) {
+    const boxes = line.boxCount > 1 ? `${line.boxCount} boxes` : null;
+    if (line.condition !== "good" || note || boxes) {
       const condLabel = line.condition === "good" ? "ok" : line.condition;
+      const extras = [boxes, note].filter(Boolean).join(" — ");
       sections.push(
-        `[LINE ${line.lineNum + 1} / ${line.itemCode}] ${condLabel}${note ? ` — ${note}` : ""}`
+        `[LINE ${line.lineNum + 1} / ${line.itemCode}] ${condLabel}${extras ? ` — ${extras}` : ""}`
       );
     }
   }

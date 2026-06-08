@@ -232,7 +232,9 @@ export async function getUpsRate(input: {
 export async function extractShippingLabel(
   image: Blob
 ): Promise<ShippingLabelExtraction> {
-  const resized = await resizeForVision(image);
+  // Labels carry small print (ZIP codes, weight, service line) — keep more
+  // pixels for vision OCR than we'd use for free-form documents.
+  const resized = await resizeForVision(image, 1800);
   const dataUrl = await blobToDataUrl(resized);
   const res = await proxyFetch("/api/extract/shipping-label", {
     method: "POST",
@@ -265,7 +267,7 @@ export async function transcribeDocument(image: Blob): Promise<string> {
   return typeof data.text === "string" ? data.text : "";
 }
 
-/** Downscale to <= 1024px on the long edge and re-encode as JPEG. 1024 is plenty for shipping-label OCR and roughly halves both upload time and vision token cost vs 1500. */
+/** Downscale to <= maxDim px on the long edge and re-encode as JPEG. Default 1024 is fine for free-form document OCR; callers pass higher (e.g. 1800) when small print (ZIPs, weight, tracking) matters. */
 async function resizeForVision(blob: Blob, maxDim = 1024): Promise<Blob> {
   const img = await createImageBitmap(blob);
   const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
