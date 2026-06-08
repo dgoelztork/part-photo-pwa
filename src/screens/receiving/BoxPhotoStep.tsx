@@ -6,6 +6,7 @@ import { CameraCapture } from "../../components/camera/CameraCapture";
 import { PhotoGallery } from "../../components/camera/PhotoGallery";
 import { extractShippingLabel } from "../../services/api-client";
 import { decodeShippingLabelBarcode } from "../../lib/barcode-reader";
+import { TailscaleHint } from "../../components/TailscaleHint";
 import type { CapturedPhoto } from "../../types/session";
 
 interface BoxPhotoStepProps {
@@ -116,9 +117,12 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
           </p>
         )}
         {extractError && (
-          <p className="text-xs text-error text-center mt-2">
-            Couldn't auto-fill from photo ({extractError}). You can edit shipping details on a later step.
-          </p>
+          <div className="mt-2 p-3 rounded-lg bg-red-50 border border-red-200">
+            <p className="text-xs text-error text-center">
+              Couldn't auto-fill from photo ({extractError}). You can edit shipping details on a later step.
+            </p>
+            <TailscaleHint />
+          </div>
         )}
       </div>
 

@@ -3,6 +3,7 @@ import { useSessionStore } from "../../stores/session-store";
 import { StepHeader } from "../../components/layout/StepHeader";
 import { StepNavigation } from "../../components/layout/StepNavigation";
 import { getUpsRate } from "../../services/api-client";
+import { TailscaleHint } from "../../components/TailscaleHint";
 
 export function ShippingDetailsStep() {
   const session = useSessionStore((s) => s.getActiveSession());
@@ -178,7 +179,10 @@ function UpsRatePanel() {
       )}
 
       {eligible && status === "err" && (
-        <p className="text-xs text-error">Couldn't get rate: {error}</p>
+        <div className="p-3 rounded-lg bg-red-50 border border-red-200">
+          <p className="text-xs text-error">Couldn't get rate: {error}</p>
+          <TailscaleHint />
+        </div>
       )}
     </div>
   );

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/auth-store";
 import { useSessionStore } from "../stores/session-store";
 import { getProxyUrl, setProxyUrl, checkProxyHealth } from "../services/api-client";
+import { TailscaleHint } from "../components/TailscaleHint";
 import type { ReceivingSession } from "../types/session";
 import { STEP_LABELS } from "../types/session";
 
@@ -108,7 +109,10 @@ export function Dashboard() {
             <p className="text-sm text-success">Connected to proxy</p>
           )}
           {proxyStatus === "error" && (
-            <p className="text-sm text-error">Cannot reach proxy at {proxyUrlInput}</p>
+            <div className="p-3 rounded-lg bg-red-50 border border-red-200">
+              <p className="text-sm text-error">Cannot reach proxy at {proxyUrlInput}</p>
+              <TailscaleHint />
+            </div>
           )}
         </div>
       )}

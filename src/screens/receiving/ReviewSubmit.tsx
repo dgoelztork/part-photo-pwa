@@ -8,6 +8,7 @@ import {
   type ReceivingUploadResult,
   type UploadProgress,
 } from "../../lib/file-exporter";
+import { TailscaleHint } from "../../components/TailscaleHint";
 
 /**
  * Build the catch-all string written to OPDN.U_GRPOdetails. Anything the
@@ -331,6 +332,7 @@ export function ReviewSubmit() {
         <div className="p-4 rounded-xl bg-red-50 border border-red-200 animate-slide-in">
           <p className="text-sm font-semibold text-error">Submission failed</p>
           <p className="text-xs text-text-secondary mt-1">{submitError}</p>
+          <TailscaleHint />
         </div>
       )}
 

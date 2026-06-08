@@ -5,6 +5,7 @@ import { StepNavigation } from "../../components/layout/StepNavigation";
 import { PhotoGallery } from "../../components/camera/PhotoGallery";
 import { captureDocument, processDocumentCapture } from "../../services/photo-service";
 import { lookupPO, type POResult } from "../../services/api-client";
+import { TailscaleHint } from "../../components/TailscaleHint";
 import type { ReceivingLine } from "../../types/session";
 
 export function PackingSlipStep() {
@@ -166,6 +167,7 @@ export function PackingSlipStep() {
             <p className="text-xs text-text-secondary mt-1">
               You can still proceed with manual entry
             </p>
+            <TailscaleHint />
           </div>
         )}
 
