@@ -125,9 +125,12 @@ function UpsRatePanel() {
           update({ freightRate: "", freightRateLabel: "" });
           return;
         }
-        const amount = result.negotiatedAmount ?? result.listAmount;
-        const tier = result.negotiatedAmount != null ? "negotiated" : "list";
-        const label = `UPS ${result.serviceName} (${tier})`;
+        // Use published list rate, not the account's negotiated rate — Tork
+        // bills customers at list, so the recorded freight cost must match.
+        // The proxy still returns negotiatedAmount for diagnostic visibility;
+        // we just ignore it here.
+        const amount = result.listAmount;
+        const label = `UPS ${result.serviceName} (list)`;
         setStatus("ok");
         update({
           freightRate: amount.toFixed(2),
