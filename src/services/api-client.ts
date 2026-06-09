@@ -6,7 +6,7 @@
 import { getAccessToken } from "../lib/auth";
 
 const PROXY_URL_KEY = "proxy-url";
-const DEFAULT_PROXY_URL = "https://tork-app.tail14e57a.ts.net:3001";
+export const DEFAULT_PROXY_URL = "https://tork-app.tail14e57a.ts.net:3001";
 
 let proxyJwt: string | null = null;
 

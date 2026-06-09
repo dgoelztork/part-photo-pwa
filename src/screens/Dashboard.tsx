@@ -2,7 +2,7 @@ import { useState, type MouseEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/auth-store";
 import { useSessionStore } from "../stores/session-store";
-import { getProxyUrl, setProxyUrl, checkProxyHealth } from "../services/api-client";
+import { getProxyUrl, setProxyUrl, checkProxyHealth, DEFAULT_PROXY_URL } from "../services/api-client";
 import { TailscaleHint } from "../components/TailscaleHint";
 import type { ReceivingSession } from "../types/session";
 import { STEP_LABELS } from "../types/session";
@@ -17,6 +17,17 @@ export function Dashboard() {
 
   const handleCheckProxy = async () => {
     setProxyUrl(proxyUrlInput);
+    setProxyStatus("checking");
+    const ok = await checkProxyHealth();
+    setProxyStatus(ok ? "ok" : "error");
+  };
+
+  // Restore the canonical proxy URL and re-test. Common fix when a new user
+  // typed the URL wrong on first setup and the bad value got stuck in
+  // localStorage. Also clears the cached JWT so a fresh auth happens next call.
+  const handleResetProxy = async () => {
+    setProxyUrlInput(DEFAULT_PROXY_URL);
+    setProxyUrl(DEFAULT_PROXY_URL);
     setProxyStatus("checking");
     const ok = await checkProxyHealth();
     setProxyStatus(ok ? "ok" : "error");
@@ -93,7 +104,7 @@ export function Dashboard() {
                 setProxyUrlInput(e.target.value);
                 setProxyStatus("idle");
               }}
-              placeholder="https://tork-app.tail14e57a.ts.net:3001"
+              placeholder={DEFAULT_PROXY_URL}
               className="flex-1 p-3 rounded-lg border border-border text-sm"
             />
             <button
@@ -105,6 +116,15 @@ export function Dashboard() {
               {proxyStatus === "checking" ? "..." : "Test"}
             </button>
           </div>
+          {proxyUrlInput !== DEFAULT_PROXY_URL && (
+            <button
+              onClick={handleResetProxy}
+              disabled={proxyStatus === "checking"}
+              className="text-xs text-primary self-start underline disabled:opacity-40"
+            >
+              Reset to default
+            </button>
+          )}
           {proxyStatus === "ok" && (
             <p className="text-sm text-success">Connected to proxy</p>
           )}
