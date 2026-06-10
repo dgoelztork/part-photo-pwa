@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSessionStore } from "../../stores/session-store";
 import { StepHeader } from "../../components/layout/StepHeader";
 import { StepNavigation } from "../../components/layout/StepNavigation";
@@ -59,6 +59,14 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
   const goToStep = useSessionStore((s) => s.goToStep);
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
+  // Local text mirror of shipmentBoxCount so the user can clear the field and
+  // type a new value without the onChange handler snapping it back to 1.
+  const [boxCountText, setBoxCountText] = useState<string>(
+    session ? String(session.shipmentBoxCount) : "1",
+  );
+  useEffect(() => {
+    if (session) setBoxCountText(String(session.shipmentBoxCount));
+  }, [session?.shipmentBoxCount]);
 
   if (!session) return null;
 
@@ -137,15 +145,43 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
         <label htmlFor="shipment-box-count" className="text-sm font-medium text-text">
           Boxes in this shipment
         </label>
-        <input
-          id="shipment-box-count"
-          type="number"
-          inputMode="numeric"
-          min={1}
-          value={target}
-          onChange={(e) => setShipmentBoxCount(Number(e.target.value) || 1)}
-          className="w-24 p-3 rounded-lg border border-border text-2xl font-bold text-center"
-        />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShipmentBoxCount(Math.max(1, target - 1))}
+            disabled={target <= 1}
+            aria-label="Decrease box count"
+            className="w-11 h-11 rounded-lg border-2 border-border text-2xl font-bold text-text disabled:opacity-30 active:scale-95 transition-transform"
+          >
+            −
+          </button>
+          <input
+            id="shipment-box-count"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            value={boxCountText}
+            onChange={(e) => {
+              setBoxCountText(e.target.value);
+              const n = parseInt(e.target.value, 10);
+              if (isFinite(n) && n >= 1) setShipmentBoxCount(n);
+            }}
+            onBlur={() => {
+              // Snap back to the committed session value if user left an invalid string.
+              const n = parseInt(boxCountText, 10);
+              if (!isFinite(n) || n < 1) setBoxCountText(String(target));
+            }}
+            className="w-16 p-2 rounded-lg border border-border text-2xl font-bold text-center"
+          />
+          <button
+            type="button"
+            onClick={() => setShipmentBoxCount(target + 1)}
+            aria-label="Increase box count"
+            className="w-11 h-11 rounded-lg border-2 border-border text-2xl font-bold text-text active:scale-95 transition-transform"
+          >
+            +
+          </button>
+        </div>
       </div>
 
       {/* Outer box photos */}
