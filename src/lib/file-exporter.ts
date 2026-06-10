@@ -109,7 +109,21 @@ function buildUploadPlan(
   };
 
   addGroup(session.boxPhotos, "BOX");
-  addGroup(session.labelPhotos, "SHIPPING_LABEL");
+  // Shipping labels — one set per physical box in a multi-piece shipment.
+  // Filename tagged with the box index so each label is traceable.
+  session.boxes.forEach((b, bi) => {
+    b.labelPhotos.forEach((p, i) => {
+      if (!p.blob || p.blob.size === 0) return;
+      const idxSuffix = b.labelPhotos.length > 1 ? `_${String(i + 1).padStart(2, "0")}` : "";
+      entries.push({
+        folder,
+        blob: p.blob,
+        filename: `${prefix}_SHIPPING_LABEL_BOX${String(bi + 1).padStart(2, "0")}_${ts}${idxSuffix}.${extFor(p.blob)}`,
+        contentType: mimeFor(p.blob),
+        destination: "receiving",
+      });
+    });
+  });
   addGroup(session.packingSlipPhotos, "PACKING_SLIP");
 
   for (const doc of session.documents) {

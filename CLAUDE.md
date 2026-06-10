@@ -17,13 +17,12 @@ A two-part app for warehouse part receiving:
 ## Wizard flow
 The receiver walks through these steps in order (status values on `ReceivingSession.status`):
 
-1. `BOX` — box photos (with optional damage flag/notes) and shipping label photos. Label OCR auto-fills shipping detail defaults.
-2. `CARRIER` — pick UPS / FedEx / LTL / Other.
-3. `PACKING_SLIP` — capture packing slip (or check "None included") and look up the PO number. After lookup, surfaces the PO header notes (`U_pImportantInfo`, `U_pInternalComments`, `U_exponotes`) read-only.
-4. `SHIPPING_DETAILS` — verify/edit the OPOR shipping fields (`TrnspCode`, `U_ShipSpeed`, `U_pFOB`, `U_pFrtChargeType`, `U_pFrtTracking`).
-5. `DOCUMENTS` — MTRs, CoCs, etc., or check "No documents."
-6. `LINES` — per-line receive: three photo groups (item, nameplate, full-quantity) + qty + condition + notes. Only item photos are required to confirm a line; nameplate and quantity photos are optional. Surfaces `POR1.FreeTxt` from the PO line.
-7. `REVIEW` → `SUBMITTED` — posts the GRPO and uploads photos to SharePoint.
+1. `BOX` — carrier pick, shipment box count, outer-box photos (damage flag/notes), per-box label captures. Each label populates its own `ShippingBox` entry (tracking, weight, origin ZIP) via barcode + OCR. `boxes.length` must reach `shipmentBoxCount` before Next is enabled; a "this box had no label" escape hatch creates a no-label box.
+2. `PACKING_SLIP` — capture packing slip (or check "None included") and look up the PO number. After lookup, surfaces the PO header notes (`U_pImportantInfo`, `U_pInternalComments`, `U_exponotes`) read-only.
+3. `SHIPPING_DETAILS` — shipment-wide PO defaults (`TrnspCode`, `U_ShipSpeed`, `U_pFOB`, `U_pFrtChargeType`, ship-to-zip) + a card per `ShippingBox` for editing tracking, weight, origin ZIP. Each box gets its own UPS list rate. Total freight summed at bottom.
+4. `DOCUMENTS` — MTRs, CoCs, etc., or check "No documents."
+5. `LINES` — per-line receive: three photo groups (item, nameplate, full-quantity) + qty + condition + notes. Only item photos are required to confirm a line; nameplate and quantity photos are optional. Surfaces `POR1.FreeTxt` from the PO line.
+6. `REVIEW` → `SUBMITTED` — posts the GRPO (per-box tracking concat into `U_pFrtTracking`, per-box freight summed into `U_InboundFrt`) and uploads photos to SharePoint.
 
 `STEP_ORDER` in `src/types/session.ts` drives the progress bar in `StepHeader`.
 

@@ -36,17 +36,27 @@ function buildGrpoDetails(session: ReceivingSession): string {
   const sdParts = [
     sd.transpCode && `transp=${sd.transpCode}`,
     sd.shipSpeed && `speed=${sd.shipSpeed}`,
-    sd.frtTracking && `tracking=${sd.frtTracking}`,
     sd.frtChargeType && `charge=${sd.frtChargeType}`,
     sd.fob && `fob=${sd.fob}`,
-    sd.shipFromZip && `shipFromZip=${sd.shipFromZip}`,
     sd.shipToZip && `shipToZip=${sd.shipToZip}`,
-    sd.weight && `weight=${sd.weight}`,
-    sd.freightRate && `rate=$${sd.freightRate}${sd.freightRateLabel ? ` ${sd.freightRateLabel}` : ""}`,
   ].filter(Boolean);
   if (sdParts.length > 0) {
     sections.push(`[SHIPPING] ${sdParts.join(" / ")}`);
   }
+
+  // Per-box breakdown — tracking, weight, origin ZIP, freight rate per box.
+  session.boxes.forEach((b, i) => {
+    const parts = [
+      b.trackingNumber && `tracking=${b.trackingNumber}`,
+      b.weight && `weight=${b.weight}`,
+      b.shipFromZip && `from=${b.shipFromZip}`,
+      b.freightRate && `rate=$${b.freightRate}${b.freightRateLabel ? ` ${b.freightRateLabel}` : ""}`,
+      b.noLabel && "no label",
+    ].filter(Boolean);
+    if (parts.length > 0) {
+      sections.push(`[BOX ${i + 1}] ${parts.join(" / ")}`);
+    }
+  });
 
   if (session.noPackingSlip) sections.push("[PACKING SLIP] None included");
   if (session.noDocuments) sections.push("[DOCS] None included");
@@ -84,7 +94,7 @@ export function ReviewSubmit() {
   const exceptions = confirmedLines.filter((l) => l.condition !== "good");
   const totalPhotos =
     session.boxPhotos.length +
-    session.labelPhotos.length +
+    session.boxes.reduce((sum, b) => sum + b.labelPhotos.length, 0) +
     session.packingSlipPhotos.length +
     session.documents.length +
     session.lineItems.reduce(
@@ -113,15 +123,23 @@ export function ReviewSubmit() {
           }));
 
         const grpoDetails = buildGrpoDetails(session);
-        const sd = session.shippingDetails;
-        const inboundFrtNum = parseFloat(sd.freightRate);
+        // Aggregate per-box freight + tracking for the GRPO header. Tracking
+        // numbers concat (comma-separated), freight rates sum.
+        const combinedTracking = session.boxes
+          .map((b) => b.trackingNumber.trim())
+          .filter(Boolean)
+          .join(", ");
+        const totalFreight = session.boxes.reduce((sum, b) => {
+          const n = parseFloat(b.freightRate);
+          return isFinite(n) ? sum + n : sum;
+        }, 0);
         const result = await postGRPO({
           vendorCode: session.vendorCode ?? "",
           poDocEntry,
           lines: grpoLines,
           grpoDetails: grpoDetails || undefined,
-          frtTracking: sd.frtTracking?.trim() || undefined,
-          inboundFrt: isFinite(inboundFrtNum) && inboundFrtNum > 0 ? inboundFrtNum : undefined,
+          frtTracking: combinedTracking || undefined,
+          inboundFrt: totalFreight > 0 ? totalFreight : undefined,
         });
 
         setGrpoDocNum(result.docNum);
@@ -217,8 +235,10 @@ export function ReviewSubmit() {
           extraColor="text-error"
         />
         <SummaryRow
-          label="Shipping Label"
-          value={`${session.labelPhotos.length} photo${session.labelPhotos.length !== 1 ? "s" : ""}`}
+          label={session.boxes.length === 1 ? "Shipping Label" : `Shipping Labels (${session.boxes.length})`}
+          value={`${session.boxes.reduce((sum, b) => sum + b.labelPhotos.length, 0)} photo${
+            session.boxes.reduce((sum, b) => sum + b.labelPhotos.length, 0) !== 1 ? "s" : ""
+          }`}
           extra={session.carrier || undefined}
         />
         <SummaryRow
@@ -232,16 +252,27 @@ export function ReviewSubmit() {
         />
         <SummaryRow
           label="Shipping Details"
-          value={session.shippingDetails.frtTracking || session.shippingDetails.transpCode || "—"}
+          value={session.shippingDetails.transpCode || session.carrier || "—"}
           extra={session.shippingDetails.shipSpeed || undefined}
         />
-        {session.shippingDetails.freightRate && (
-          <SummaryRow
-            label="UPS Rate"
-            value={`$${session.shippingDetails.freightRate}`}
-            extra={session.shippingDetails.freightRateLabel || undefined}
-          />
-        )}
+        {(() => {
+          const totalFreight = session.boxes.reduce((sum, b) => {
+            const n = parseFloat(b.freightRate);
+            return isFinite(n) ? sum + n : sum;
+          }, 0);
+          if (totalFreight <= 0) return null;
+          const label =
+            session.boxes.length === 1
+              ? session.boxes[0].freightRateLabel || undefined
+              : `${session.boxes.length} boxes (list)`;
+          return (
+            <SummaryRow
+              label="UPS Rate"
+              value={`$${totalFreight.toFixed(2)}`}
+              extra={label}
+            />
+          );
+        })()}
         <SummaryRow
           label="Documents"
           value={

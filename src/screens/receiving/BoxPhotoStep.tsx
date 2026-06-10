@@ -7,7 +7,7 @@ import { PhotoGallery } from "../../components/camera/PhotoGallery";
 import { extractShippingLabel } from "../../services/api-client";
 import { decodeShippingLabelBarcode } from "../../lib/barcode-reader";
 import { TailscaleHint } from "../../components/TailscaleHint";
-import type { CapturedPhoto, Carrier } from "../../types/session";
+import type { CapturedPhoto, Carrier, ShippingBox } from "../../types/session";
 
 const CARRIER_OPTIONS: Array<{
   id: Carrier;
@@ -53,57 +53,58 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
   const setCarrier = useSessionStore((s) => s.setCarrier);
   const setDamaged = useSessionStore((s) => s.setBoxDamaged);
   const setNotes = useSessionStore((s) => s.setBoxDamageNotes);
-  const addLabelPhoto = useSessionStore((s) => s.addLabelPhoto);
-  const removeLabelPhoto = useSessionStore((s) => s.removeLabelPhoto);
-  const updateInfo = useSessionStore((s) => s.updateShippingInfo);
+  const addShippingBox = useSessionStore((s) => s.addShippingBox);
+  const removeShippingBox = useSessionStore((s) => s.removeShippingBox);
+  const updateShippingBox = useSessionStore((s) => s.updateShippingBox);
   const goToStep = useSessionStore((s) => s.goToStep);
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
 
   if (!session) return null;
 
+  const labelsCaptured = session.boxes.length;
+  const target = session.shipmentBoxCount;
   const canProceed =
     session.boxPhotos.length >= 1 &&
-    session.labelPhotos.length >= 1 &&
     !!session.carrier &&
+    labelsCaptured >= target &&
     !extracting;
-  const info = session.shippingInfo;
 
   // Hybrid extraction: barcode scan (local, fast, 100% accurate when it
   // decodes) and vision OCR (remote, fills the fields the barcode doesn't
-  // carry) run in parallel. Barcode wins for tracking + carrier; OCR
-  // supplies weight, ZIPs, and service speed. Then fill blanks only so a
-  // manual entry isn't overwritten. The structured fields aren't shown on
-  // this step anymore — they're consumed later as defaults on the
-  // SHIPPING_DETAILS step.
+  // carry) run in parallel. Each labeled box gets its own ShippingBox entry
+  // populated from the extraction so the ShippingDetails step can show the
+  // per-box breakdown and quote UPS rates per box.
   const handleLabelCapture = async (photo: CapturedPhoto) => {
-    addLabelPhoto(photo);
     setExtractError(null);
     setExtracting(true);
+    const boxId = addShippingBox({ labelPhotos: [photo] });
     try {
       const [barcodeHit, ocrFields] = await Promise.all([
         decodeShippingLabelBarcode(photo.blob),
         extractShippingLabel(photo.blob),
       ]);
 
-      // Barcode-derived tracking + carrier override OCR equivalents.
-      // Everything else comes from OCR.
       const carrier = barcodeHit?.carrier ?? ocrFields.carrier;
       const trackingNumber = barcodeHit?.trackingNumber ?? ocrFields.trackingNumber;
+      const updates: Partial<ShippingBox> = {};
+      if (trackingNumber) updates.trackingNumber = trackingNumber;
+      if (ocrFields.weight) updates.weight = ocrFields.weight;
+      if (ocrFields.shipFrom) updates.shipFromZip = ocrFields.shipFrom;
+      if (Object.keys(updates).length > 0) updateShippingBox(boxId, updates);
 
-      const patch: Partial<typeof info> = {};
-      if (carrier && !info.carrier) patch.carrier = carrier;
-      if (trackingNumber && !info.trackingNumber) patch.trackingNumber = trackingNumber;
-      if (ocrFields.weight && !info.weight) patch.weight = ocrFields.weight;
-      if (ocrFields.shipFrom && !info.shipFrom) patch.shipFrom = ocrFields.shipFrom;
-      if (ocrFields.shipToZip && !info.shipToZip) patch.shipToZip = ocrFields.shipToZip;
-      if (ocrFields.shippingSpeed && !info.shippingSpeed) patch.shippingSpeed = ocrFields.shippingSpeed;
-      if (Object.keys(patch).length > 0) updateInfo(patch);
+      // Carrier is shipment-level; set it from the first box's label if not
+      // already chosen by the user.
+      if (carrier && !session.carrier) setCarrier(carrier as Carrier);
     } catch (err) {
       setExtractError(err instanceof Error ? err.message : "Extraction failed");
     } finally {
       setExtracting(false);
     }
+  };
+
+  const addNoLabelBox = () => {
+    addShippingBox({ noLabel: true });
   };
 
   return (
@@ -141,15 +142,15 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
           type="number"
           inputMode="numeric"
           min={1}
-          value={session.shipmentBoxCount}
+          value={target}
           onChange={(e) => setShipmentBoxCount(Number(e.target.value) || 1)}
           className="w-24 p-3 rounded-lg border border-border text-2xl font-bold text-center"
         />
       </div>
 
-      {/* Box photos */}
+      {/* Outer box photos */}
       <p className="text-sm text-text-secondary">
-        Photograph the shipping box as received, before opening.
+        Photograph the shipping box(es) as received, before opening.
       </p>
       <CameraCapture onCapture={addBoxPhoto} label="Photograph Box" />
       <PhotoGallery photos={session.boxPhotos} onDelete={removeBoxPhoto} />
@@ -178,13 +179,25 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
         </div>
       )}
 
-      {/* Shipping label photos */}
+      {/* Per-box label capture */}
       <div className="border-t border-border pt-4 mt-2">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-sm font-medium text-text">Shipping labels</p>
+          <p className="text-xs text-text-secondary">
+            {labelsCaptured} of {target} captured
+          </p>
+        </div>
         <p className="text-sm text-text-secondary mb-3">
-          Now photograph the shipping label clearly.
+          Photograph the label on each box. Each label captures its own tracking and weight.
         </p>
-        <CameraCapture onCapture={handleLabelCapture} label="Photograph Label" />
-        <PhotoGallery photos={session.labelPhotos} onDelete={removeLabelPhoto} />
+        <CameraCapture
+          onCapture={handleLabelCapture}
+          label={
+            labelsCaptured === 0
+              ? "Photograph Label"
+              : `Photograph Label (Box ${labelsCaptured + 1})`
+          }
+        />
         {extracting && (
           <p className="text-sm text-text-secondary text-center animate-pulse mt-2">
             Reading label...
@@ -198,6 +211,54 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
             <TailscaleHint />
           </div>
         )}
+
+        {/* List of captured boxes */}
+        {session.boxes.length > 0 && (
+          <div className="mt-3 flex flex-col gap-2">
+            {session.boxes.map((b, i) => (
+              <div
+                key={b.id}
+                className="bg-surface rounded-xl p-3 shadow-sm flex items-center gap-3"
+              >
+                {b.labelPhotos[0]?.thumbnailUrl ? (
+                  <img
+                    src={b.labelPhotos[0].thumbnailUrl}
+                    alt={`Box ${i + 1} label`}
+                    className="w-12 h-12 rounded-lg object-cover border border-border"
+                  />
+                ) : (
+                  <div className="w-12 h-12 rounded-lg bg-bg border border-dashed border-border flex items-center justify-center text-xs text-text-secondary">
+                    no label
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-text">Box {i + 1}</p>
+                  <p className="text-xs text-text-secondary truncate">
+                    {b.trackingNumber || (b.noLabel ? "No label" : "Reading...")}
+                    {b.weight ? ` · ${b.weight}` : ""}
+                  </p>
+                </div>
+                <button
+                  onClick={() => removeShippingBox(b.id)}
+                  className="text-text-secondary text-sm px-2 py-1"
+                  aria-label={`Remove box ${i + 1}`}
+                >
+                  &times;
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* "No label" escape hatch when one box really has no label */}
+        {labelsCaptured < target && (
+          <button
+            onClick={addNoLabelBox}
+            className="mt-2 text-xs text-primary underline self-start"
+          >
+            This box had no label
+          </button>
+        )}
       </div>
 
       <StepNavigation
@@ -206,7 +267,7 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
       >
         {!canProceed && (
           <p className="text-center text-sm text-text-secondary">
-            Select a carrier and take at least 1 box photo and 1 label photo to continue
+            Select a carrier, photograph at least one box, and capture {target} label{target > 1 ? "s" : ""} to continue
           </p>
         )}
       </StepNavigation>

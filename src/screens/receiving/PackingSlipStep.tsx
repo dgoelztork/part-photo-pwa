@@ -54,7 +54,6 @@ export function PackingSlipStep() {
         shipSpeed: result.shipSpeed,
         fob: result.fob,
         frtChargeType: result.frtChargeType,
-        frtTracking: result.frtTracking,
       });
 
       const lines: ReceivingLine[] = result.lines.map((l) => ({

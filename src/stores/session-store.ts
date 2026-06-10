@@ -6,8 +6,8 @@ import type {
   SessionStatus,
   CapturedPhoto,
   CapturedDocument,
-  ShippingInfo,
   ShippingDetails,
+  ShippingBox,
   ReceivingLine,
   ItemCondition,
   Carrier,
@@ -27,15 +27,18 @@ interface SessionStore {
   setStatus: (status: SessionStatus) => void;
   goToStep: (step: SessionStatus) => void;
 
-  // BOX step (now also holds the shipping label photos)
+  // BOX step (now also holds the per-box shipping labels)
   addBoxPhoto: (photo: CapturedPhoto) => void;
   removeBoxPhoto: (photoId: string) => void;
   setShipmentBoxCount: (count: number) => void;
   setBoxDamaged: (damaged: boolean) => void;
   setBoxDamageNotes: (notes: string) => void;
-  addLabelPhoto: (photo: CapturedPhoto) => void;
-  removeLabelPhoto: (photoId: string) => void;
-  updateShippingInfo: (info: Partial<ShippingInfo>) => void;
+  /** Append a new ShippingBox entry. Returns the new box id so the caller can update its OCR fields. */
+  addShippingBox: (partial?: Partial<Omit<ShippingBox, "id">>) => string;
+  removeShippingBox: (id: string) => void;
+  updateShippingBox: (id: string, updates: Partial<ShippingBox>) => void;
+  addShippingBoxLabelPhoto: (id: string, photo: CapturedPhoto) => void;
+  removeShippingBoxLabelPhoto: (id: string, photoId: string) => void;
 
   // CARRIER step
   setCarrier: (carrier: Carrier) => void;
@@ -58,7 +61,6 @@ interface SessionStore {
     shipSpeed: string;
     fob: string;
     frtChargeType: string;
-    frtTracking: string;
   }) => void;
 
   // SHIPPING_DETAILS step
@@ -95,8 +97,7 @@ function createEmptySession(userName: string): ReceivingSession {
     shipmentBoxCount: 1,
     boxDamaged: false,
     boxDamageNotes: "",
-    labelPhotos: [],
-    shippingInfo: { carrier: "", trackingNumber: "", weight: "", shipFrom: "", shipToZip: "", shippingSpeed: "" },
+    boxes: [],
     packingSlipPhotos: [],
     noPackingSlip: false,
     poNumber: "",
@@ -108,12 +109,7 @@ function createEmptySession(userName: string): ReceivingSession {
       shipSpeed: "",
       fob: "",
       frtChargeType: "",
-      frtTracking: "",
-      shipFromZip: "",
       shipToZip: "",
-      weight: "",
-      freightRate: "",
-      freightRateLabel: "",
     },
     documents: [],
     noDocuments: false,
@@ -230,25 +226,56 @@ export const useSessionStore = create<SessionStore>()(
         }));
       },
 
-      // BOX (label photos captured on the same step)
-      addLabelPhoto: (photo: CapturedPhoto) => {
+      // BOX (per-box shipping label captures)
+      addShippingBox: (partial?: Partial<Omit<ShippingBox, "id">>) => {
+        const id = generateId();
+        const box: ShippingBox = {
+          id,
+          labelPhotos: [],
+          noLabel: false,
+          trackingNumber: "",
+          weight: "",
+          shipFromZip: "",
+          freightRate: "",
+          freightRateLabel: "",
+          ...partial,
+        };
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
-            labelPhotos: [...s.labelPhotos, photo],
+            boxes: [...s.boxes, box],
+          })),
+        }));
+        return id;
+      },
+      removeShippingBox: (id: string) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
+            boxes: s.boxes.filter((b) => b.id !== id),
           })),
         }));
       },
-      removeLabelPhoto: (photoId: string) => {
+      updateShippingBox: (id: string, updates: Partial<ShippingBox>) => {
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
-            labelPhotos: s.labelPhotos.filter((p) => p.id !== photoId),
+            boxes: s.boxes.map((b) => (b.id === id ? { ...b, ...updates } : b)),
           })),
         }));
       },
-      updateShippingInfo: (info: Partial<ShippingInfo>) => {
+      addShippingBoxLabelPhoto: (id: string, photo: CapturedPhoto) => {
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
-            shippingInfo: { ...s.shippingInfo, ...info },
+            boxes: s.boxes.map((b) =>
+              b.id === id ? { ...b, labelPhotos: [...b.labelPhotos, photo] } : b,
+            ),
+          })),
+        }));
+      },
+      removeShippingBoxLabelPhoto: (id: string, photoId: string) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
+            boxes: s.boxes.map((b) =>
+              b.id === id ? { ...b, labelPhotos: b.labelPhotos.filter((p) => p.id !== photoId) } : b,
+            ),
           })),
         }));
       },
@@ -312,15 +339,10 @@ export const useSessionStore = create<SessionStore>()(
               expoNotes: data.expoNotes,
               shippingDetails: {
                 transpCode: sd.transpCode || carrierDefault,
-                shipSpeed: sd.shipSpeed || s.shippingInfo.shippingSpeed || data.shipSpeed,
+                shipSpeed: sd.shipSpeed || data.shipSpeed,
                 fob: sd.fob || data.fob,
                 frtChargeType: sd.frtChargeType || data.frtChargeType,
-                frtTracking: sd.frtTracking || s.shippingInfo.trackingNumber || data.frtTracking,
-                shipFromZip: sd.shipFromZip || s.shippingInfo.shipFrom,
-                shipToZip: sd.shipToZip || s.shippingInfo.shipToZip,
-                weight: sd.weight || s.shippingInfo.weight,
-                freightRate: sd.freightRate,
-                freightRateLabel: sd.freightRateLabel,
+                shipToZip: sd.shipToZip,
               },
             };
           }),
@@ -450,28 +472,73 @@ export const useSessionStore = create<SessionStore>()(
       // v1 added per-line nameplatePhotos and quantityPhotos.
       // v2 added per-line boxCount (later moved to the shipment level).
       // v3 introduced session.shipmentBoxCount and abandoned per-line boxCount.
-      // v4 retired the CARRIER wizard step (carrier moved to BOX). Coerce
-      // any session stuck at status "CARRIER" back to "BOX".
+      // v4 retired the CARRIER wizard step (carrier moved to BOX).
+      // v5 restructured shipping: session.labelPhotos+shippingInfo and the
+      //    per-box fields on shippingDetails (frtTracking, weight, shipFromZip,
+      //    freightRate, freightRateLabel) move into session.boxes[].
       // Backfill so resumed sessions don't crash.
-      version: 4,
+      version: 5,
       migrate: (persistedState, fromVersion) => {
         const state = (persistedState ?? {}) as { sessions?: ReceivingSession[] };
-        if (fromVersion < 4 && Array.isArray(state.sessions)) {
-          state.sessions = state.sessions.map((s) => ({
-            ...s,
-            status: s.status === "CARRIER" ? "BOX" : s.status,
-            shipmentBoxCount:
-              typeof s.shipmentBoxCount === "number" && s.shipmentBoxCount > 0
-                ? s.shipmentBoxCount
-                : 1,
-            lineItems: Array.isArray(s.lineItems)
-              ? s.lineItems.map((l) => ({
-                  ...l,
-                  nameplatePhotos: Array.isArray(l.nameplatePhotos) ? l.nameplatePhotos : [],
-                  quantityPhotos: Array.isArray(l.quantityPhotos) ? l.quantityPhotos : [],
-                }))
-              : [],
-          }));
+        if (fromVersion < 5 && Array.isArray(state.sessions)) {
+          state.sessions = state.sessions.map((s) => {
+            const legacy = s as ReceivingSession & {
+              labelPhotos?: CapturedPhoto[];
+              shippingInfo?: { trackingNumber?: string; weight?: string; shipFrom?: string };
+              shippingDetails?: {
+                frtTracking?: string;
+                weight?: string;
+                shipFromZip?: string;
+                freightRate?: string;
+                freightRateLabel?: string;
+              } & ShippingDetails;
+            };
+            const oldSd = legacy.shippingDetails ?? ({} as ShippingDetails);
+            const oldLabels = Array.isArray(legacy.labelPhotos) ? legacy.labelPhotos : [];
+            const hasLegacyData =
+              oldLabels.length > 0 ||
+              (legacy.shippingInfo && Object.values(legacy.shippingInfo).some(Boolean)) ||
+              oldSd.frtTracking || oldSd.weight || oldSd.shipFromZip || oldSd.freightRate;
+
+            const seedBox: ShippingBox = {
+              id: generateId(),
+              labelPhotos: oldLabels,
+              noLabel: oldLabels.length === 0,
+              trackingNumber: oldSd.frtTracking ?? legacy.shippingInfo?.trackingNumber ?? "",
+              weight: oldSd.weight ?? legacy.shippingInfo?.weight ?? "",
+              shipFromZip: oldSd.shipFromZip ?? legacy.shippingInfo?.shipFrom ?? "",
+              freightRate: oldSd.freightRate ?? "",
+              freightRateLabel: oldSd.freightRateLabel ?? "",
+            };
+
+            return {
+              ...legacy,
+              status: legacy.status === "CARRIER" ? "BOX" : legacy.status,
+              shipmentBoxCount:
+                typeof legacy.shipmentBoxCount === "number" && legacy.shipmentBoxCount > 0
+                  ? legacy.shipmentBoxCount
+                  : 1,
+              boxes: Array.isArray(legacy.boxes) && legacy.boxes.length > 0
+                ? legacy.boxes
+                : hasLegacyData
+                  ? [seedBox]
+                  : [],
+              shippingDetails: {
+                transpCode: oldSd.transpCode ?? "",
+                shipSpeed: oldSd.shipSpeed ?? "",
+                fob: oldSd.fob ?? "",
+                frtChargeType: oldSd.frtChargeType ?? "",
+                shipToZip: (oldSd as ShippingDetails & { shipToZip?: string }).shipToZip ?? "",
+              },
+              lineItems: Array.isArray(legacy.lineItems)
+                ? legacy.lineItems.map((l: ReceivingLine) => ({
+                    ...l,
+                    nameplatePhotos: Array.isArray(l.nameplatePhotos) ? l.nameplatePhotos : [],
+                    quantityPhotos: Array.isArray(l.quantityPhotos) ? l.quantityPhotos : [],
+                  }))
+                : [],
+            } as ReceivingSession;
+          });
         }
         return state as unknown as SessionStore;
       },
@@ -483,7 +550,10 @@ export const useSessionStore = create<SessionStore>()(
           sessions: state.sessions.map((s) => ({
             ...s,
             boxPhotos: s.boxPhotos.map(stripBlob),
-            labelPhotos: s.labelPhotos.map(stripBlob),
+            boxes: s.boxes.map((b) => ({
+              ...b,
+              labelPhotos: b.labelPhotos.map(stripBlob),
+            })),
             packingSlipPhotos: s.packingSlipPhotos.map(stripBlob),
             documents: s.documents.map((d) => ({ ...d, photo: stripBlob(d.photo) })),
             lineItems: s.lineItems.map((l) => ({

@@ -34,6 +34,26 @@ export interface ShippingInfo {
   shippingSpeed: string;
 }
 
+/**
+ * One physical box in a multi-piece shipment. Each box carries its own label
+ * (tracking number, weight, origin ZIP) and gets its own UPS list rate. Aggregated
+ * up at submit time: trackingNumber values join into OPDN.U_pFrtTracking and the
+ * freightRate numbers sum into OPDN.U_InboundFrt.
+ */
+export interface ShippingBox {
+  id: string;
+  labelPhotos: CapturedPhoto[];
+  /** Receiver checked "this box had no label" — labelPhotos can be empty. */
+  noLabel: boolean;
+  // OCR/barcode-extracted, editable on the SHIPPING_DETAILS step:
+  trackingNumber: string;
+  weight: string;          // "12.5 LBS"
+  shipFromZip: string;
+  // Computed via the UPS Rating API per box; list rate, not negotiated.
+  freightRate: string;     // dollar amount as a plain string, no $
+  freightRateLabel: string;
+}
+
 export interface ReceivingLine {
   lineNum: number;
   itemCode: string;
@@ -55,19 +75,18 @@ export interface ReceivingLine {
   freeText: string;
 }
 
+/**
+ * Shipment-wide shipping details. PO-header defaults that apply to every box
+ * in a multi-piece arrival. Per-box fields (tracking, weight, origin ZIP,
+ * freight rate) now live on each ShippingBox.
+ */
 export interface ShippingDetails {
   transpCode: string;
   shipSpeed: string;
   fob: string;
   frtChargeType: string;
-  frtTracking: string;
-  shipFromZip: string;
+  /** Destination warehouse ZIP. Same for every box in the shipment. */
   shipToZip: string;
-  weight: string;
-  /** UPS-rated freight cost for the parcel (negotiated when available). Empty if not looked up. */
-  freightRate: string;
-  /** Human-readable summary for display + GRPO comment, e.g. "UPS Ground (negotiated)". */
-  freightRateLabel: string;
 }
 
 export interface ReceivingSession {
@@ -76,15 +95,14 @@ export interface ReceivingSession {
   createdBy: string;
   status: SessionStatus;
 
-  // BOX step — box photos + label photos captured together
+  // BOX step — outer-box photos plus a list of per-box shipping labels
   boxPhotos: CapturedPhoto[];
-  /** Number of boxes in this UPS/carrier shipment. Captured on the BOX step. */
+  /** Target number of boxes in this carrier shipment. boxes.length must reach this before Next is enabled. */
   shipmentBoxCount: number;
   boxDamaged: boolean;
   boxDamageNotes: string;
-  labelPhotos: CapturedPhoto[];
-  // Raw OCR extraction from the shipping label, used to prefill shipping details
-  shippingInfo: ShippingInfo;
+  /** One entry per physical box in the shipment, populated as labels are captured. */
+  boxes: ShippingBox[];
 
   // CARRIER step — receiver picks before packing slip
   carrier?: Carrier;
