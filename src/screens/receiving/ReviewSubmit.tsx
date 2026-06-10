@@ -19,6 +19,10 @@ import { TailscaleHint } from "../../components/TailscaleHint";
 function buildGrpoDetails(session: ReceivingSession): string {
   const sections: string[] = [];
 
+  if (session.shipmentBoxCount > 1) {
+    sections.push(`[SHIPMENT] ${session.shipmentBoxCount} boxes`);
+  }
+
   if (session.boxDamaged) {
     const note = session.boxDamageNotes.trim();
     sections.push(`[BOX] Damaged${note ? ` — ${note}` : ""}`);
@@ -50,12 +54,10 @@ function buildGrpoDetails(session: ReceivingSession): string {
   for (const line of session.lineItems) {
     if (!line.confirmed) continue;
     const note = line.notes.trim();
-    const boxes = line.boxCount > 1 ? `${line.boxCount} boxes` : null;
-    if (line.condition !== "good" || note || boxes) {
+    if (line.condition !== "good" || note) {
       const condLabel = line.condition === "good" ? "ok" : line.condition;
-      const extras = [boxes, note].filter(Boolean).join(" — ");
       sections.push(
-        `[LINE ${line.lineNum + 1} / ${line.itemCode}] ${condLabel}${extras ? ` — ${extras}` : ""}`
+        `[LINE ${line.lineNum + 1} / ${line.itemCode}] ${condLabel}${note ? ` — ${note}` : ""}`
       );
     }
   }

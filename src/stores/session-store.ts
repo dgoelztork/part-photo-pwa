@@ -30,6 +30,7 @@ interface SessionStore {
   // BOX step (now also holds the shipping label photos)
   addBoxPhoto: (photo: CapturedPhoto) => void;
   removeBoxPhoto: (photoId: string) => void;
+  setShipmentBoxCount: (count: number) => void;
   setBoxDamaged: (damaged: boolean) => void;
   setBoxDamageNotes: (notes: string) => void;
   addLabelPhoto: (photo: CapturedPhoto) => void;
@@ -91,6 +92,7 @@ function createEmptySession(userName: string): ReceivingSession {
     createdBy: userName,
     status: "BOX",
     boxPhotos: [],
+    shipmentBoxCount: 1,
     boxDamaged: false,
     boxDamageNotes: "",
     labelPhotos: [],
@@ -203,6 +205,13 @@ export const useSessionStore = create<SessionStore>()(
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
             boxPhotos: s.boxPhotos.filter((p) => p.id !== photoId),
+          })),
+        }));
+      },
+      setShipmentBoxCount: (count: number) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, () => ({
+            shipmentBoxCount: Math.max(1, Math.floor(count) || 1),
           })),
         }));
       },
@@ -439,20 +448,24 @@ export const useSessionStore = create<SessionStore>()(
       name: "receiving-sessions",
       storage: idbStorage,
       // v1 added per-line nameplatePhotos and quantityPhotos.
-      // v2 added per-line boxCount. Pre-vN sessions have undefined for those
-      // fields; backfill so resume/render doesn't crash.
-      version: 2,
+      // v2 added per-line boxCount (later moved to the shipment level).
+      // v3 introduced session.shipmentBoxCount and abandoned per-line boxCount.
+      // Backfill so resumed sessions don't crash.
+      version: 3,
       migrate: (persistedState, fromVersion) => {
         const state = (persistedState ?? {}) as { sessions?: ReceivingSession[] };
-        if (fromVersion < 2 && Array.isArray(state.sessions)) {
+        if (fromVersion < 3 && Array.isArray(state.sessions)) {
           state.sessions = state.sessions.map((s) => ({
             ...s,
+            shipmentBoxCount:
+              typeof s.shipmentBoxCount === "number" && s.shipmentBoxCount > 0
+                ? s.shipmentBoxCount
+                : 1,
             lineItems: Array.isArray(s.lineItems)
               ? s.lineItems.map((l) => ({
                   ...l,
                   nameplatePhotos: Array.isArray(l.nameplatePhotos) ? l.nameplatePhotos : [],
                   quantityPhotos: Array.isArray(l.quantityPhotos) ? l.quantityPhotos : [],
-                  boxCount: typeof l.boxCount === "number" && l.boxCount > 0 ? l.boxCount : 1,
                 }))
               : [],
           }));

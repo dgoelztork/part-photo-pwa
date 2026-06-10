@@ -186,47 +186,25 @@ function LineDetailView({
         />
       </div>
 
-      {/* Quantity + Box count */}
-      <div className="bg-surface rounded-xl p-4 shadow-sm grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-2">
-            Received Quantity
-          </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            value={line.receivedQty}
-            onChange={(e) =>
-              updateLine(line.lineNum, {
-                receivedQty: Math.min(Number(e.target.value) || 0, line.openQty),
-              })
-            }
-            className="w-full p-3 rounded-lg border border-border text-2xl font-bold text-center"
-          />
-          <p className="text-xs text-text-secondary text-center mt-1">
-            Max: {line.openQty}
-          </p>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-2">
-            Boxes
-          </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            min={1}
-            value={line.boxCount}
-            onChange={(e) =>
-              updateLine(line.lineNum, {
-                boxCount: Math.max(1, Number(e.target.value) || 1),
-              })
-            }
-            className="w-full p-3 rounded-lg border border-border text-2xl font-bold text-center"
-          />
-          <p className="text-xs text-text-secondary text-center mt-1">
-            for this line
-          </p>
-        </div>
+      {/* Quantity */}
+      <div className="bg-surface rounded-xl p-4 shadow-sm">
+        <label className="block text-sm font-medium text-text-secondary mb-2">
+          Received Quantity
+        </label>
+        <input
+          type="number"
+          inputMode="numeric"
+          value={line.receivedQty}
+          onChange={(e) =>
+            updateLine(line.lineNum, {
+              receivedQty: Math.min(Number(e.target.value) || 0, line.openQty),
+            })
+          }
+          className="w-full p-3 rounded-lg border border-border text-2xl font-bold text-center"
+        />
+        <p className="text-xs text-text-secondary text-center mt-1">
+          Max: {line.openQty}
+        </p>
       </div>
 
       {/* Condition */}

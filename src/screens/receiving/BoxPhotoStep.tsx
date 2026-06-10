@@ -17,6 +17,7 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
   const session = useSessionStore((s) => s.getActiveSession());
   const addBoxPhoto = useSessionStore((s) => s.addBoxPhoto);
   const removeBoxPhoto = useSessionStore((s) => s.removeBoxPhoto);
+  const setShipmentBoxCount = useSessionStore((s) => s.setShipmentBoxCount);
   const setDamaged = useSessionStore((s) => s.setBoxDamaged);
   const setNotes = useSessionStore((s) => s.setBoxDamageNotes);
   const addLabelPhoto = useSessionStore((s) => s.addLabelPhoto);
@@ -72,6 +73,22 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
   return (
     <div className="min-h-full flex flex-col gap-4 p-4 max-w-lg mx-auto safe-top safe-bottom">
       <StepHeader currentStep="BOX" onBack={onBack} />
+
+      {/* Number of boxes in this shipment */}
+      <div className="bg-surface rounded-xl p-4 shadow-sm flex items-center justify-between">
+        <label htmlFor="shipment-box-count" className="text-sm font-medium text-text">
+          Boxes in this shipment
+        </label>
+        <input
+          id="shipment-box-count"
+          type="number"
+          inputMode="numeric"
+          min={1}
+          value={session.shipmentBoxCount}
+          onChange={(e) => setShipmentBoxCount(Number(e.target.value) || 1)}
+          className="w-24 p-3 rounded-lg border border-border text-2xl font-bold text-center"
+        />
+      </div>
 
       {/* Box photos */}
       <p className="text-sm text-text-secondary">

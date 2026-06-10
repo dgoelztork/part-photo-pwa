@@ -42,8 +42,6 @@ export interface ReceivingLine {
   previouslyReceivedQty: number;
   openQty: number;
   receivedQty: number;
-  /** Number of boxes this line item arrived in. Default 1. */
-  boxCount: number;
   condition: ItemCondition;
   notes: string;
   /** Product/item photos. Required for confirm. Also copied to the per-part Web images folder. */
@@ -80,6 +78,8 @@ export interface ReceivingSession {
 
   // BOX step — box photos + label photos captured together
   boxPhotos: CapturedPhoto[];
+  /** Number of boxes in this UPS/carrier shipment. Captured on the BOX step. */
+  shipmentBoxCount: number;
   boxDamaged: boolean;
   boxDamageNotes: string;
   labelPhotos: CapturedPhoto[];
