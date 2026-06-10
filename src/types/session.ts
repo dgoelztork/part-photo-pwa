@@ -45,6 +45,13 @@ export interface ShippingBox {
   labelPhotos: CapturedPhoto[];
   /** Receiver checked "this box had no label" — labelPhotos can be empty. */
   noLabel: boolean;
+  /** True while barcode+OCR extraction is still running for this box. */
+  extracting?: boolean;
+  /** Damage flag is per-box now (multi-piece shipments may have one damaged box and others fine). */
+  damaged: boolean;
+  damageNotes: string;
+  /** Photos of damage, only captured when damaged === true. Replaces the old session-level boxPhotos. */
+  damagePhotos: CapturedPhoto[];
   // OCR/barcode-extracted, editable on the SHIPPING_DETAILS step:
   trackingNumber: string;
   weight: string;          // "12.5 LBS"
@@ -95,12 +102,9 @@ export interface ReceivingSession {
   createdBy: string;
   status: SessionStatus;
 
-  // BOX step — outer-box photos plus a list of per-box shipping labels
-  boxPhotos: CapturedPhoto[];
+  // BOX step — per-box shipping labels with per-box damage state
   /** Target number of boxes in this carrier shipment. boxes.length must reach this before Next is enabled. */
   shipmentBoxCount: number;
-  boxDamaged: boolean;
-  boxDamageNotes: string;
   /** One entry per physical box in the shipment, populated as labels are captured. */
   boxes: ShippingBox[];
 

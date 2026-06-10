@@ -23,11 +23,6 @@ function buildGrpoDetails(session: ReceivingSession): string {
     sections.push(`[SHIPMENT] ${session.shipmentBoxCount} boxes`);
   }
 
-  if (session.boxDamaged) {
-    const note = session.boxDamageNotes.trim();
-    sections.push(`[BOX] Damaged${note ? ` — ${note}` : ""}`);
-  }
-
   if (session.carrier) {
     sections.push(`[CARRIER] ${session.carrier}`);
   }
@@ -44,7 +39,7 @@ function buildGrpoDetails(session: ReceivingSession): string {
     sections.push(`[SHIPPING] ${sdParts.join(" / ")}`);
   }
 
-  // Per-box breakdown — tracking, weight, origin ZIP, freight rate per box.
+  // Per-box breakdown — tracking, weight, origin ZIP, freight rate, damage per box.
   session.boxes.forEach((b, i) => {
     const parts = [
       b.trackingNumber && `tracking=${b.trackingNumber}`,
@@ -52,6 +47,7 @@ function buildGrpoDetails(session: ReceivingSession): string {
       b.shipFromZip && `from=${b.shipFromZip}`,
       b.freightRate && `rate=$${b.freightRate}${b.freightRateLabel ? ` ${b.freightRateLabel}` : ""}`,
       b.noLabel && "no label",
+      b.damaged && `DAMAGED${b.damageNotes.trim() ? ` — ${b.damageNotes.trim()}` : ""}`,
     ].filter(Boolean);
     if (parts.length > 0) {
       sections.push(`[BOX ${i + 1}] ${parts.join(" / ")}`);
@@ -93,8 +89,7 @@ export function ReviewSubmit() {
   const totalReceived = confirmedLines.reduce((sum, l) => sum + l.receivedQty, 0);
   const exceptions = confirmedLines.filter((l) => l.condition !== "good");
   const totalPhotos =
-    session.boxPhotos.length +
-    session.boxes.reduce((sum, b) => sum + b.labelPhotos.length, 0) +
+    session.boxes.reduce((sum, b) => sum + b.labelPhotos.length + b.damagePhotos.length, 0) +
     session.packingSlipPhotos.length +
     session.documents.length +
     session.lineItems.reduce(
@@ -108,8 +103,8 @@ export function ReviewSubmit() {
     setSubmitting(true);
     setSubmitError(null);
 
+    let postedDocEntry: number | null = null;
     try {
-      let postedDocEntry: number | null = null;
       if (poDocEntry) {
         // Post GRPO to SAP via proxy
         const grpoLines = confirmedLines
@@ -146,8 +141,24 @@ export function ReviewSubmit() {
         postedDocEntry = result.docEntry;
       }
 
-      // Upload photo evidence to SharePoint. Failure here does not invalidate
-      // the GRPO that just posted to SAP — surface but don't block.
+      // GRPO is in SAP — flip status now so the receiver sees success and
+      // can return to the dashboard. SharePoint upload runs in the
+      // background and stamps U_GRPODocs when done. A SharePoint failure
+      // never undoes the posted GRPO.
+      setStatus("SUBMITTED");
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Submission failed");
+      setSubmitting(false);
+      return;
+    }
+
+    setSubmitting(false);
+
+    // Background: upload photo evidence to SharePoint, then patch the GRPO
+    // with the folder URL. Fire-and-forget — the success screen is already
+    // rendered. If the receiver navigates away mid-upload, the in-flight
+    // fetches keep going and the store gets updated when (if) they finish.
+    void (async () => {
       let uploadOutcome: ReceivingUploadResult | null = null;
       try {
         uploadOutcome = await uploadReceivingSessionToSharePoint(session, setUploadProgress);
@@ -167,9 +178,6 @@ export function ReviewSubmit() {
         setUploadProgress(null);
       }
 
-      // Stamp the SharePoint folder URL onto the posted GRPO (OPDN.U_GRPODocs)
-      // so SAP users can click through to the evidence folder. Best-effort —
-      // a PATCH failure must not undo the successful GRPO + upload.
       if (postedDocEntry !== null && uploadOutcome?.folderUrl && uploadOutcome.uploaded > 0) {
         try {
           await patchGrpoDocsUrl(postedDocEntry, uploadOutcome.folderUrl);
@@ -178,18 +186,11 @@ export function ReviewSubmit() {
         }
       }
 
-      setStatus("SUBMITTED");
       if (!poDocEntry) {
         // No SAP posting — just mark done after upload attempt
         navigate("/");
       }
-    } catch (err) {
-      setSubmitError(
-        err instanceof Error ? err.message : "Submission failed"
-      );
-    } finally {
-      setSubmitting(false);
-    }
+    })();
   };
 
   return (
@@ -228,12 +229,19 @@ export function ReviewSubmit() {
 
       {/* Summary cards */}
       <div className="flex flex-col gap-2">
-        <SummaryRow
-          label="Box Photos"
-          value={`${session.boxPhotos.length} photo${session.boxPhotos.length !== 1 ? "s" : ""}`}
-          extra={session.boxDamaged ? "Damage noted" : undefined}
-          extraColor="text-error"
-        />
+        {(() => {
+          const damagedBoxes = session.boxes.filter((b) => b.damaged);
+          const damagePhotoCount = damagedBoxes.reduce((sum, b) => sum + b.damagePhotos.length, 0);
+          if (damagedBoxes.length === 0) return null;
+          return (
+            <SummaryRow
+              label={damagedBoxes.length === 1 ? "Damaged Box" : `Damaged Boxes (${damagedBoxes.length})`}
+              value={`${damagePhotoCount} photo${damagePhotoCount !== 1 ? "s" : ""}`}
+              extra="Damage noted"
+              extraColor="text-error"
+            />
+          );
+        })()}
         <SummaryRow
           label={session.boxes.length === 1 ? "Shipping Label" : `Shipping Labels (${session.boxes.length})`}
           value={`${session.boxes.reduce((sum, b) => sum + b.labelPhotos.length, 0)} photo${
@@ -318,22 +326,18 @@ export function ReviewSubmit() {
         {totalPhotos} total photos captured
       </p>
 
-      {/* Upload progress */}
-      {uploadProgress && (
-        <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 animate-slide-in">
-          <p className="text-sm font-medium text-text">
-            Uploading photos to SharePoint ({uploadProgress.current}/{uploadProgress.total})
-          </p>
-          <p className="text-xs text-text-secondary truncate mt-1">{uploadProgress.fileName}</p>
-        </div>
-      )}
-
-      {/* GRPO success */}
-      {grpoDocNum && !uploadProgress && (
+      {/* GRPO success — appears as soon as the SAP post returns. Photo upload
+          to SharePoint then runs in the background; status shows below. */}
+      {grpoDocNum && (
         <div className="p-4 rounded-xl bg-green-50 border border-green-200 text-center animate-slide-in">
           <p className="text-lg font-bold text-success">GRPO Posted</p>
           <p className="text-sm text-text-secondary">Document #{grpoDocNum}</p>
-          {uploadResult && (() => {
+          {uploadProgress && (
+            <p className="text-xs text-text-secondary mt-2 truncate">
+              Uploading photos in background ({uploadProgress.current}/{uploadProgress.total})…
+            </p>
+          )}
+          {!uploadProgress && uploadResult && (() => {
             // Receiving-folder failures matter to the receiver; web-images are a
             // background secondary copy, surface those only via console.
             const recvFailed = uploadResult.failed.filter((f) => f.destination === "receiving");

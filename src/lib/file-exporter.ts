@@ -108,17 +108,28 @@ function buildUploadPlan(
     });
   };
 
-  addGroup(session.boxPhotos, "BOX");
-  // Shipping labels — one set per physical box in a multi-piece shipment.
-  // Filename tagged with the box index so each label is traceable.
+  // Shipping labels + any damage photos — both indexed per physical box so
+  // each file's origin box is obvious in the receiving folder.
   session.boxes.forEach((b, bi) => {
+    const boxTag = `BOX${String(bi + 1).padStart(2, "0")}`;
     b.labelPhotos.forEach((p, i) => {
       if (!p.blob || p.blob.size === 0) return;
       const idxSuffix = b.labelPhotos.length > 1 ? `_${String(i + 1).padStart(2, "0")}` : "";
       entries.push({
         folder,
         blob: p.blob,
-        filename: `${prefix}_SHIPPING_LABEL_BOX${String(bi + 1).padStart(2, "0")}_${ts}${idxSuffix}.${extFor(p.blob)}`,
+        filename: `${prefix}_SHIPPING_LABEL_${boxTag}_${ts}${idxSuffix}.${extFor(p.blob)}`,
+        contentType: mimeFor(p.blob),
+        destination: "receiving",
+      });
+    });
+    b.damagePhotos.forEach((p, i) => {
+      if (!p.blob || p.blob.size === 0) return;
+      const idxSuffix = b.damagePhotos.length > 1 ? `_${String(i + 1).padStart(2, "0")}` : "";
+      entries.push({
+        folder,
+        blob: p.blob,
+        filename: `${prefix}_${boxTag}_DAMAGE_${ts}${idxSuffix}.${extFor(p.blob)}`,
         contentType: mimeFor(p.blob),
         destination: "receiving",
       });

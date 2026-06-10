@@ -27,18 +27,16 @@ interface SessionStore {
   setStatus: (status: SessionStatus) => void;
   goToStep: (step: SessionStatus) => void;
 
-  // BOX step (now also holds the per-box shipping labels)
-  addBoxPhoto: (photo: CapturedPhoto) => void;
-  removeBoxPhoto: (photoId: string) => void;
+  // BOX step (per-box shipping labels and per-box damage)
   setShipmentBoxCount: (count: number) => void;
-  setBoxDamaged: (damaged: boolean) => void;
-  setBoxDamageNotes: (notes: string) => void;
   /** Append a new ShippingBox entry. Returns the new box id so the caller can update its OCR fields. */
   addShippingBox: (partial?: Partial<Omit<ShippingBox, "id">>) => string;
   removeShippingBox: (id: string) => void;
   updateShippingBox: (id: string, updates: Partial<ShippingBox>) => void;
   addShippingBoxLabelPhoto: (id: string, photo: CapturedPhoto) => void;
   removeShippingBoxLabelPhoto: (id: string, photoId: string) => void;
+  addShippingBoxDamagePhoto: (id: string, photo: CapturedPhoto) => void;
+  removeShippingBoxDamagePhoto: (id: string, photoId: string) => void;
 
   // CARRIER step
   setCarrier: (carrier: Carrier) => void;
@@ -93,10 +91,7 @@ function createEmptySession(userName: string): ReceivingSession {
     createdAt: new Date().toISOString(),
     createdBy: userName,
     status: "BOX",
-    boxPhotos: [],
     shipmentBoxCount: 1,
-    boxDamaged: false,
-    boxDamageNotes: "",
     boxes: [],
     packingSlipPhotos: [],
     noPackingSlip: false,
@@ -190,38 +185,10 @@ export const useSessionStore = create<SessionStore>()(
       },
 
       // BOX
-      addBoxPhoto: (photo: CapturedPhoto) => {
-        set((state) => ({
-          sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
-            boxPhotos: [...s.boxPhotos, photo],
-          })),
-        }));
-      },
-      removeBoxPhoto: (photoId: string) => {
-        set((state) => ({
-          sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
-            boxPhotos: s.boxPhotos.filter((p) => p.id !== photoId),
-          })),
-        }));
-      },
       setShipmentBoxCount: (count: number) => {
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, () => ({
             shipmentBoxCount: Math.max(1, Math.floor(count) || 1),
-          })),
-        }));
-      },
-      setBoxDamaged: (damaged: boolean) => {
-        set((state) => ({
-          sessions: updateSession(state.sessions, state.activeSessionId, () => ({
-            boxDamaged: damaged,
-          })),
-        }));
-      },
-      setBoxDamageNotes: (notes: string) => {
-        set((state) => ({
-          sessions: updateSession(state.sessions, state.activeSessionId, () => ({
-            boxDamageNotes: notes,
           })),
         }));
       },
@@ -233,6 +200,10 @@ export const useSessionStore = create<SessionStore>()(
           id,
           labelPhotos: [],
           noLabel: false,
+          extracting: false,
+          damaged: false,
+          damageNotes: "",
+          damagePhotos: [],
           trackingNumber: "",
           weight: "",
           shipFromZip: "",
@@ -275,6 +246,24 @@ export const useSessionStore = create<SessionStore>()(
           sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
             boxes: s.boxes.map((b) =>
               b.id === id ? { ...b, labelPhotos: b.labelPhotos.filter((p) => p.id !== photoId) } : b,
+            ),
+          })),
+        }));
+      },
+      addShippingBoxDamagePhoto: (id: string, photo: CapturedPhoto) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
+            boxes: s.boxes.map((b) =>
+              b.id === id ? { ...b, damagePhotos: [...b.damagePhotos, photo] } : b,
+            ),
+          })),
+        }));
+      },
+      removeShippingBoxDamagePhoto: (id: string, photoId: string) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
+            boxes: s.boxes.map((b) =>
+              b.id === id ? { ...b, damagePhotos: b.damagePhotos.filter((p) => p.id !== photoId) } : b,
             ),
           })),
         }));
@@ -476,15 +465,22 @@ export const useSessionStore = create<SessionStore>()(
       // v5 restructured shipping: session.labelPhotos+shippingInfo and the
       //    per-box fields on shippingDetails (frtTracking, weight, shipFromZip,
       //    freightRate, freightRateLabel) move into session.boxes[].
+      // v6 moved box damage + damage photos onto each ShippingBox (formerly
+      //    session.boxPhotos / boxDamaged / boxDamageNotes). Pre-v6 session
+      //    damage state is merged onto the first box. Outer-box photos are
+      //    repurposed as the first box's damagePhotos.
       // Backfill so resumed sessions don't crash.
-      version: 5,
+      version: 6,
       migrate: (persistedState, fromVersion) => {
         const state = (persistedState ?? {}) as { sessions?: ReceivingSession[] };
-        if (fromVersion < 5 && Array.isArray(state.sessions)) {
+        if (fromVersion < 6 && Array.isArray(state.sessions)) {
           state.sessions = state.sessions.map((s) => {
             const legacy = s as ReceivingSession & {
               labelPhotos?: CapturedPhoto[];
               shippingInfo?: { trackingNumber?: string; weight?: string; shipFrom?: string };
+              boxPhotos?: CapturedPhoto[];
+              boxDamaged?: boolean;
+              boxDamageNotes?: string;
               shippingDetails?: {
                 frtTracking?: string;
                 weight?: string;
@@ -495,21 +491,51 @@ export const useSessionStore = create<SessionStore>()(
             };
             const oldSd = legacy.shippingDetails ?? ({} as ShippingDetails);
             const oldLabels = Array.isArray(legacy.labelPhotos) ? legacy.labelPhotos : [];
-            const hasLegacyData =
+            const oldBoxPhotos = Array.isArray(legacy.boxPhotos) ? legacy.boxPhotos : [];
+            const hasLegacyShippingData =
               oldLabels.length > 0 ||
               (legacy.shippingInfo && Object.values(legacy.shippingInfo).some(Boolean)) ||
               oldSd.frtTracking || oldSd.weight || oldSd.shipFromZip || oldSd.freightRate;
+            const hasLegacyDamage =
+              oldBoxPhotos.length > 0 || legacy.boxDamaged || (legacy.boxDamageNotes && legacy.boxDamageNotes.trim() !== "");
 
+            // Seed a single box from any pre-v6 shipping data we have.
             const seedBox: ShippingBox = {
               id: generateId(),
               labelPhotos: oldLabels,
               noLabel: oldLabels.length === 0,
+              extracting: false,
+              damaged: Boolean(legacy.boxDamaged),
+              damageNotes: legacy.boxDamageNotes ?? "",
+              damagePhotos: oldBoxPhotos,
               trackingNumber: oldSd.frtTracking ?? legacy.shippingInfo?.trackingNumber ?? "",
               weight: oldSd.weight ?? legacy.shippingInfo?.weight ?? "",
               shipFromZip: oldSd.shipFromZip ?? legacy.shippingInfo?.shipFrom ?? "",
               freightRate: oldSd.freightRate ?? "",
               freightRateLabel: oldSd.freightRateLabel ?? "",
             };
+
+            // If boxes already exist, just normalize each to the v6 shape.
+            const normalizedExistingBoxes: ShippingBox[] = Array.isArray(legacy.boxes)
+              ? legacy.boxes.map((b, i) => ({
+                  ...b,
+                  extracting: false,
+                  damaged: Boolean((b as ShippingBox).damaged ?? (i === 0 && legacy.boxDamaged)),
+                  damageNotes: (b as ShippingBox).damageNotes ?? (i === 0 ? legacy.boxDamageNotes ?? "" : ""),
+                  damagePhotos: Array.isArray((b as ShippingBox).damagePhotos)
+                    ? (b as ShippingBox).damagePhotos
+                    : i === 0
+                      ? oldBoxPhotos
+                      : [],
+                }))
+              : [];
+
+            const boxes =
+              normalizedExistingBoxes.length > 0
+                ? normalizedExistingBoxes
+                : hasLegacyShippingData || hasLegacyDamage
+                  ? [seedBox]
+                  : [];
 
             return {
               ...legacy,
@@ -518,11 +544,7 @@ export const useSessionStore = create<SessionStore>()(
                 typeof legacy.shipmentBoxCount === "number" && legacy.shipmentBoxCount > 0
                   ? legacy.shipmentBoxCount
                   : 1,
-              boxes: Array.isArray(legacy.boxes) && legacy.boxes.length > 0
-                ? legacy.boxes
-                : hasLegacyData
-                  ? [seedBox]
-                  : [],
+              boxes,
               shippingDetails: {
                 transpCode: oldSd.transpCode ?? "",
                 shipSpeed: oldSd.shipSpeed ?? "",
@@ -549,10 +571,10 @@ export const useSessionStore = create<SessionStore>()(
           ...state,
           sessions: state.sessions.map((s) => ({
             ...s,
-            boxPhotos: s.boxPhotos.map(stripBlob),
             boxes: s.boxes.map((b) => ({
               ...b,
               labelPhotos: b.labelPhotos.map(stripBlob),
+              damagePhotos: b.damagePhotos.map(stripBlob),
             })),
             packingSlipPhotos: s.packingSlipPhotos.map(stripBlob),
             documents: s.documents.map((d) => ({ ...d, photo: stripBlob(d.photo) })),
