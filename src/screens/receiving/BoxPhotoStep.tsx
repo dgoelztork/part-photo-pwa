@@ -7,7 +7,39 @@ import { PhotoGallery } from "../../components/camera/PhotoGallery";
 import { extractShippingLabel } from "../../services/api-client";
 import { decodeShippingLabelBarcode } from "../../lib/barcode-reader";
 import { TailscaleHint } from "../../components/TailscaleHint";
-import type { CapturedPhoto } from "../../types/session";
+import type { CapturedPhoto, Carrier } from "../../types/session";
+
+const CARRIER_OPTIONS: Array<{
+  id: Carrier;
+  label: string;
+  selectedClass: string;
+  unselectedClass: string;
+}> = [
+  {
+    id: "UPS",
+    label: "UPS",
+    selectedClass: "bg-amber-800 text-white border-amber-900",
+    unselectedClass: "bg-amber-50 text-amber-900 border-amber-200",
+  },
+  {
+    id: "FedEx",
+    label: "FedEx",
+    selectedClass: "bg-purple-700 text-white border-purple-800",
+    unselectedClass: "bg-purple-50 text-purple-900 border-purple-200",
+  },
+  {
+    id: "LTL",
+    label: "LTL",
+    selectedClass: "bg-blue-700 text-white border-blue-800",
+    unselectedClass: "bg-blue-50 text-blue-900 border-blue-200",
+  },
+  {
+    id: "Other",
+    label: "Other",
+    selectedClass: "bg-gray-700 text-white border-gray-800",
+    unselectedClass: "bg-gray-100 text-gray-900 border-gray-300",
+  },
+];
 
 interface BoxPhotoStepProps {
   onBack: () => void;
@@ -18,6 +50,7 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
   const addBoxPhoto = useSessionStore((s) => s.addBoxPhoto);
   const removeBoxPhoto = useSessionStore((s) => s.removeBoxPhoto);
   const setShipmentBoxCount = useSessionStore((s) => s.setShipmentBoxCount);
+  const setCarrier = useSessionStore((s) => s.setCarrier);
   const setDamaged = useSessionStore((s) => s.setBoxDamaged);
   const setNotes = useSessionStore((s) => s.setBoxDamageNotes);
   const addLabelPhoto = useSessionStore((s) => s.addLabelPhoto);
@@ -30,7 +63,10 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
   if (!session) return null;
 
   const canProceed =
-    session.boxPhotos.length >= 1 && session.labelPhotos.length >= 1 && !extracting;
+    session.boxPhotos.length >= 1 &&
+    session.labelPhotos.length >= 1 &&
+    !!session.carrier &&
+    !extracting;
   const info = session.shippingInfo;
 
   // Hybrid extraction: barcode scan (local, fast, 100% accurate when it
@@ -73,6 +109,27 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
   return (
     <div className="min-h-full flex flex-col gap-4 p-4 max-w-lg mx-auto safe-top safe-bottom">
       <StepHeader currentStep="BOX" onBack={onBack} />
+
+      {/* Carrier selection */}
+      <div>
+        <p className="text-sm font-medium text-text mb-2">Carrier</p>
+        <div className="grid grid-cols-4 gap-2">
+          {CARRIER_OPTIONS.map((opt) => {
+            const isSelected = session.carrier === opt.id;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => setCarrier(opt.id)}
+                className={`py-3 rounded-xl border-2 font-bold text-sm
+                            active:scale-[0.98] transition-transform
+                            ${isSelected ? opt.selectedClass : opt.unselectedClass}`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Number of boxes in this shipment */}
       <div className="bg-surface rounded-xl p-4 shadow-sm flex items-center justify-between">
@@ -144,12 +201,12 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
       </div>
 
       <StepNavigation
-        onNext={() => goToStep("CARRIER")}
+        onNext={() => goToStep("PACKING_SLIP")}
         nextDisabled={!canProceed}
       >
         {!canProceed && (
           <p className="text-center text-sm text-text-secondary">
-            Take at least 1 box photo and 1 label photo to continue
+            Select a carrier and take at least 1 box photo and 1 label photo to continue
           </p>
         )}
       </StepNavigation>

@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useSessionStore } from "../../stores/session-store";
 import { BoxPhotoStep } from "./BoxPhotoStep";
-import { CarrierStep } from "./CarrierStep";
 import { PackingSlipStep } from "./PackingSlipStep";
 import { ShippingDetailsStep } from "./ShippingDetailsStep";
 import { DocumentsStep } from "./DocumentsStep";
@@ -39,7 +38,9 @@ export function ReceivingWizard() {
     case "BOX":
       return <BoxPhotoStep onBack={goHome} />;
     case "CARRIER":
-      return <CarrierStep />;
+      // CARRIER is a retired step; redirect resumed sessions to BOX where
+      // the carrier selector now lives.
+      return <BoxPhotoStep onBack={goHome} />;
     case "PACKING_SLIP":
       return <PackingSlipStep />;
     case "SHIPPING_DETAILS":

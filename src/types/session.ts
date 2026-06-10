@@ -132,7 +132,6 @@ export const CONDITION_LABELS: Record<ItemCondition, string> = {
 
 export const STEP_LABELS: Record<string, string> = {
   BOX: "Box & Label",
-  CARRIER: "Carrier",
   PACKING_SLIP: "Packing Slip",
   SHIPPING_DETAILS: "Shipping Details",
   DOCUMENTS: "Documents",
@@ -140,9 +139,12 @@ export const STEP_LABELS: Record<string, string> = {
   REVIEW: "Review",
 };
 
+// CARRIER is intentionally absent — carrier selection now lives on the BOX
+// step. The status string is retained in the SessionStatus union so resumed
+// pre-v4 sessions don't fail typing; the persist migration coerces any
+// "CARRIER" status to "BOX" on load.
 export const STEP_ORDER: SessionStatus[] = [
   "BOX",
-  "CARRIER",
   "PACKING_SLIP",
   "SHIPPING_DETAILS",
   "DOCUMENTS",

@@ -450,13 +450,16 @@ export const useSessionStore = create<SessionStore>()(
       // v1 added per-line nameplatePhotos and quantityPhotos.
       // v2 added per-line boxCount (later moved to the shipment level).
       // v3 introduced session.shipmentBoxCount and abandoned per-line boxCount.
+      // v4 retired the CARRIER wizard step (carrier moved to BOX). Coerce
+      // any session stuck at status "CARRIER" back to "BOX".
       // Backfill so resumed sessions don't crash.
-      version: 3,
+      version: 4,
       migrate: (persistedState, fromVersion) => {
         const state = (persistedState ?? {}) as { sessions?: ReceivingSession[] };
-        if (fromVersion < 3 && Array.isArray(state.sessions)) {
+        if (fromVersion < 4 && Array.isArray(state.sessions)) {
           state.sessions = state.sessions.map((s) => ({
             ...s,
+            status: s.status === "CARRIER" ? "BOX" : s.status,
             shipmentBoxCount:
               typeof s.shipmentBoxCount === "number" && s.shipmentBoxCount > 0
                 ? s.shipmentBoxCount
