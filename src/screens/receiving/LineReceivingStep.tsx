@@ -197,14 +197,22 @@ function LineDetailView({
           value={line.receivedQty}
           onChange={(e) =>
             updateLine(line.lineNum, {
-              receivedQty: Math.min(Number(e.target.value) || 0, line.openQty),
+              // Allow over-receipt: the receiver may get more than the PO open
+              // qty (e.g. 10 ft of pipe against an 8 ft line). Only floor at 0.
+              receivedQty: Math.max(0, Number(e.target.value) || 0),
             })
           }
           className="w-full p-3 rounded-lg border border-border text-2xl font-bold text-center"
         />
-        <p className="text-xs text-text-secondary text-center mt-1">
-          Max: {line.openQty}
-        </p>
+        {line.receivedQty > line.openQty ? (
+          <p className="text-xs text-warning text-center mt-1">
+            {line.receivedQty - line.openQty} over open qty ({line.openQty})
+          </p>
+        ) : (
+          <p className="text-xs text-text-secondary text-center mt-1">
+            Open: {line.openQty}
+          </p>
+        )}
       </div>
 
       {/* Condition */}
