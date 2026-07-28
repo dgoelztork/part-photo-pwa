@@ -114,7 +114,11 @@ export function ReviewSubmit() {
             baseLine: l.lineNum,
             itemCode: l.itemCode,
             quantity: l.receivedQty,
-            warehouse: "01", // Default warehouse
+            // Carry the PO line's warehouse (POR1.WarehouseCode) so receipts
+            // post to the correct site — Pascagoula POs land in Pascagoula,
+            // not a hardcoded default. Fallback covers sessions that were
+            // already in-flight before this field existed (all warehouse-01).
+            warehouse: l.warehouse || "01",
           }));
 
         const grpoDetails = buildGrpoDetails(session);

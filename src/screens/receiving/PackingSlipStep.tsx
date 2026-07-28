@@ -71,6 +71,7 @@ export function PackingSlipStep() {
         quantityPhotos: [],
         confirmed: false,
         freeText: l.freeText,
+        warehouse: l.warehouse,
       }));
       setLineItems(lines);
     } catch (err) {

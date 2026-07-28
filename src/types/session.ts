@@ -80,6 +80,13 @@ export interface ReceivingLine {
   confirmed: boolean;
   // POR1.FreeTxt from the PO line, surfaced read-only for the receiver
   freeText: string;
+  /**
+   * Destination warehouse for this line, carried straight from the PO line
+   * (POR1.WarehouseCode). Drives the GRPO line's WarehouseCode so multi-site
+   * receiving (e.g. Pascagoula vs. the default warehouse) posts to the right
+   * warehouse instead of a hardcoded default.
+   */
+  warehouse: string;
 }
 
 /**
