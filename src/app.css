@@ -49,3 +49,39 @@ button { touch-action: manipulation; }
   50% { opacity: 0.4; }
 }
 .animate-pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
+
+/* Printing — only the picklist document reaches the paper.
+   The picklist overlay is portalled to <body>, outside #root, so printing is
+   just "hide the app, unwrap the overlay". The unwrapping matters: on screen
+   the overlay is a fixed, scrolling viewport-sized box, and a print would
+   otherwise clip the list to one screenful instead of flowing it across
+   pages. */
+@media print {
+  #root { display: none !important; }
+  .no-print { display: none !important; }
+
+  .picklist-overlay {
+    position: static !important;
+    display: block !important;
+    height: auto !important;
+    background: #fff !important;
+  }
+  .picklist-scroll {
+    overflow: visible !important;
+    height: auto !important;
+    flex: none !important;
+    padding-top: 0 !important;
+  }
+
+  .picklist-print {
+    max-width: none;
+    padding: 0;
+    color: #000;
+  }
+  /* Keep a line's item code, description and quantities on the same page, and
+     repeat the column headers on every sheet. */
+  .picklist-print tr { break-inside: avoid; }
+  .picklist-print thead { display: table-header-group; }
+
+  @page { margin: 0.5in; }
+}

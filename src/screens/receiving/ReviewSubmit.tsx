@@ -9,6 +9,7 @@ import {
   type UploadProgress,
 } from "../../lib/file-exporter";
 import { TailscaleHint } from "../../components/TailscaleHint";
+import { PicklistView } from "./PicklistView";
 
 /**
  * Build the catch-all string written to OPDN.U_GRPOdetails. Anything the
@@ -81,6 +82,7 @@ export function ReviewSubmit() {
   const [grpoDocNum, setGrpoDocNum] = useState<number | null>(null);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [uploadResult, setUploadResult] = useState<ReceivingUploadResult | null>(null);
+  const [showPicklist, setShowPicklist] = useState(false);
 
   if (!session) return null;
 
@@ -98,6 +100,13 @@ export function ReviewSubmit() {
     );
 
   const poDocEntry = session.poDocEntry;
+
+  // Qty received per item on this receipt, for the picklist's RECV column. A
+  // part can appear on more than one PO line, so sum rather than overwrite.
+  const receivedByItem = confirmedLines.reduce<Record<string, number>>((acc, l) => {
+    acc[l.itemCode] = (acc[l.itemCode] ?? 0) + l.receivedQty;
+    return acc;
+  }, {});
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -359,12 +368,27 @@ export function ReviewSubmit() {
               </p>
             );
           })()}
-          <button
-            onClick={() => navigate("/")}
-            className="mt-3 px-6 py-2 rounded-lg bg-primary text-white font-medium"
-          >
-            Done
-          </button>
+          {/* Most of what we receive is already committed to a customer order.
+              Offer the pick sheet here, while the parts are still on the bench. */}
+          <div className="mt-3 pt-3 border-t border-green-200">
+            <p className="text-sm text-text mb-2">Print picklist for this order?</p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowPicklist(true)}
+                className="flex-1 px-4 py-2 rounded-lg bg-surface border border-primary
+                           text-primary font-medium active:scale-[0.98] transition-transform"
+              >
+                Print Picklist
+              </button>
+              <button
+                onClick={() => navigate("/")}
+                className="flex-1 px-4 py-2 rounded-lg bg-primary text-white font-medium
+                           active:scale-[0.98] transition-transform"
+              >
+                Done
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -397,7 +421,16 @@ export function ReviewSubmit() {
       )}
 
       {isSubmitted && (
-        <div className="mt-auto pt-4">
+        <div className="mt-auto pt-4 flex flex-col gap-2">
+          {/* Reprint path for a session revisited from the dashboard. */}
+          {session.poNumber && (
+            <button
+              onClick={() => setShowPicklist(true)}
+              className="w-full py-3 rounded-xl bg-surface border border-primary text-primary font-medium"
+            >
+              Print Picklist
+            </button>
+          )}
           <button
             onClick={() => navigate("/")}
             className="w-full py-3 rounded-xl bg-surface border border-border text-text font-medium"
@@ -405,6 +438,15 @@ export function ReviewSubmit() {
             Back to Dashboard
           </button>
         </div>
+      )}
+
+      {showPicklist && session.poNumber && (
+        <PicklistView
+          poNumber={session.poNumber}
+          grpoDocNum={grpoDocNum}
+          receivedByItem={receivedByItem}
+          onClose={() => setShowPicklist(false)}
+        />
       )}
     </div>
   );

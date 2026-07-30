@@ -10,6 +10,7 @@ import poRoutes from "./routes/purchase-orders.js";
 import grpoRoutes from "./routes/grpo.js";
 import extractRoutes from "./routes/extract.js";
 import freightRoutes from "./routes/freight.js";
+import picklistRoutes from "./routes/picklist.js";
 
 function requireConfig() {
   const errors: string[] = [];
@@ -58,6 +59,7 @@ app.use("/api/po", requireAuth, poRoutes);
 app.use("/api/grpo", requireAuth, grpoRoutes);
 app.use("/api/extract", requireAuth, extractRoutes);
 app.use("/api/freight", requireAuth, freightRoutes);
+app.use("/api/picklist", requireAuth, picklistRoutes);
 
 // JSON error handler — keeps body-parser failures from leaking stack traces as HTML.
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

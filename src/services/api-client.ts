@@ -175,6 +175,86 @@ export async function patchGrpoDocsUrl(
   }
 }
 
+export interface PicklistWarehouseStock {
+  warehouse: string;
+  inStock: number;
+  committed: number;
+  ordered: number;
+}
+
+export interface PicklistLine {
+  lineNum: number;
+  customerLineNo: string;
+  itemCode: string;
+  itemDescription: string;
+  orderedQty: number;
+  openQty: number;
+  warehouse: string;
+  uom: string;
+  closed: boolean;
+  pickStatus: string;
+  pickedQty: number;
+  poTargetNum: number | null;
+  /** True when this SO line was ordered on the PO that was just received. */
+  fromThisPo: boolean;
+  /** Live on-hand across all warehouses. null when the stock lookup failed. */
+  onHandTotal: number | null;
+  onHandAtWarehouse: number | null;
+  stockByWarehouse: PicklistWarehouseStock[];
+  freeText: string;
+  serial: string;
+  tag: string;
+  condition: string;
+  customerPartNo: string;
+}
+
+export interface PicklistResult {
+  poNumber: number;
+  poDocEntry: number;
+  vendorName: string;
+  soNumber: number;
+  soDocEntry: number;
+  customerCode: string;
+  customerName: string;
+  customerPO: string;
+  shipToCode: string;
+  shipToAddress: string;
+  vesselJob: string;
+  soComments: string;
+  orderDate: string | null;
+  dueDate: string | null;
+  soStatus: string;
+  lines: PicklistLine[];
+  openLineCount: number;
+  closedLineCount: number;
+  generatedAt: string;
+}
+
+/** Error thrown when a PO has no sales order to build a picklist from. */
+export class NoSalesOrderError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NoSalesOrderError";
+  }
+}
+
+/**
+ * Build the pick sheet for the sales order behind a PO (OPOR.U_pSONumber).
+ * Stock figures are read live, so calling this after the GRPO posts reflects
+ * the receipt.
+ */
+export async function fetchPicklist(poNumber: string): Promise<PicklistResult> {
+  const res = await proxyFetch(`/api/picklist/${encodeURIComponent(poNumber)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Picklist lookup failed" }));
+    if (err.error === "NO_SO_LINKED" || err.error === "SO_REF_NOT_NUMERIC") {
+      throw new NoSalesOrderError(err.message ?? "No sales order linked to this PO");
+    }
+    throw new Error(err.message ?? `Picklist lookup failed (${res.status})`);
+  }
+  return res.json();
+}
+
 /** Check if the proxy is reachable. */
 export async function checkProxyHealth(): Promise<boolean> {
   try {

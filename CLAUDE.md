@@ -35,6 +35,15 @@ The receiver walks through these steps in order (status values on `ReceivingSess
 - After GRPO posts and the SharePoint upload completes, the proxy `PATCH /api/grpo/:docEntry` writes the SharePoint folder webUrl to `OPDN.U_GRPODocs` so SAP users can click through to the photo evidence. Best-effort — failure logs a warning but does not undo the GRPO/upload.
 - Per-line **item** and **nameplate** photos are saved a **second** time to `WEB_IMAGES_SHAREPOINT_PATH` (flat folder, named by part number — e.g. `M106412.jpg` for product, `M106412_nameplate.jpg` for nameplate) for AI/marketing/web reuse. Built into `buildUploadPlan` as additional entries with `conflictBehavior: "rename"` so older shots aren't clobbered. Quantity, box, label, packing-slip, and document photos are NOT duplicated to web images. Filename suffixes in the receiving folder distinguish the groups: `_LINE_NNN_<itemcode>_<ts>.jpg` (item), `_NAMEPLATE_<ts>.jpg`, `_QTY_<ts>.jpg`.
 
+## Picklist
+- After a GRPO posts, the success card offers **Print Picklist**. Tork raises vendor POs against a customer sales order and stamps the SO number on the PO header (`OPOR.U_pSONumber`, a string holding the SO `DocNum`), so most of what the warehouse receives is already committed to an order.
+- `GET /api/picklist/:poNumber` (`proxy/src/routes/picklist.ts`) resolves PO → `U_pSONumber` → SO header + lines, then attaches **live** on-hand per item.
+- One SO is commonly fed by **several** vendor POs, so the sheet covers the whole SO, not just this PO's lines. Each SO line's `POTargetNum` (the PO DocNum it was ordered on) drives the `fromThisPo` flag that highlights what this receipt filled.
+- Stock is read live from `/Items` → `ItemWarehouseInfoCollection.InStock`, **not** from the SO line's stored `U_01Stock` / `U_TotalAvailable` UDFs — those are stamped at line entry and go stale (observed `U_TotalAvailable="0.00"` on an item with 2 on hand).
+- Stock lookup is best-effort and chunked 15 items per SL call; a failed chunk leaves `onHandTotal: null` (rendered `?`) rather than sinking the whole sheet.
+- POs with no SO linked (stock replenishment) return `404 NO_SO_LINKED`, which the UI shows as a plain "nothing to pick" message rather than an error.
+- Printing: `PicklistView` portals to `<body>` and `@media print` in `app.css` hides `#root`, so the sheet flows across pages instead of being clipped to the overlay's scroll box.
+
 ## Auth
 - User signs in with Azure AD via MSAL (`src/lib/auth.ts`, `src/screens/Login.tsx`).
 - The Azure access token is exchanged for a proxy-issued JWT at `POST /api/auth/login` (`api-client.ts → authenticate()`); the JWT is held in memory and re-fetched on 401.
@@ -57,6 +66,7 @@ src/
       DocumentsStep.tsx
       LineReceivingStep.tsx
       ReviewSubmit.tsx           # builds U_GRPOdetails, posts GRPO, then PATCHes U_GRPODocs
+      PicklistView.tsx           # post-receipt pick sheet for the linked SO (print overlay)
   stores/
     auth-store.ts, session-store.ts
   services/
@@ -79,6 +89,7 @@ proxy/
       auth.ts                    # Azure → proxy JWT
       purchase-orders.ts         # PO lookup
       grpo.ts                    # GRPO post + read
+      picklist.ts                # PO → U_pSONumber → SO lines + live stock
     services/
       sl-session.ts              # SAP B1 Service Layer session + slFetch
 ```
