@@ -28,3 +28,5 @@ proxy/certs/
 *.njsproj
 *.sln
 *.sw?
+
+tsconfig.tsbuildinfo

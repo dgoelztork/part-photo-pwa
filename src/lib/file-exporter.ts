@@ -1,4 +1,5 @@
 import { uploadFile, uploadFileToSharePoint, getSharePointFolderWebUrl } from "./graph-client";
+import { saveFileCards, type FileCard } from "../services/api-client";
 import { RECEIVING_SHAREPOINT_PATH, WEB_IMAGES_SHAREPOINT_PATH } from "../config";
 import type { CapturedPhoto } from "../types";
 import type { ReceivingSession, CapturedPhoto as SessionPhoto } from "../types/session";
@@ -67,6 +68,19 @@ interface UploadEntry {
   conflictBehavior?: "replace" | "rename" | "fail";
   /** Tag identifying which destination this entry belongs to (for result accounting). */
   destination: "receiving" | "web-images";
+  /**
+   * What this file actually is, kept as fields rather than only encoded into
+   * the filename. Sent to the proxy after upload so every photo gets an index
+   * card that can be searched and joined.
+   */
+  card: {
+    kind: string;
+    partNumber?: string | null;
+    lineNum?: number | null;
+    description?: string | null;
+    /** When the photo was actually taken, not when it was uploaded. */
+    capturedAt?: string | null;
+  };
 }
 
 /** Format a Date as `YYYY-MM-DD_HH-MM-SS` (filename-safe, no colons or slashes). */
@@ -94,7 +108,7 @@ function buildUploadPlan(
   const mimeFor = (blob: Blob) =>
     blob.type === "application/pdf" ? "application/pdf" : "image/jpeg";
 
-  const addGroup = (photos: SessionPhoto[], section: string) => {
+  const addGroup = (photos: SessionPhoto[], section: string, kind: string) => {
     photos.forEach((p, i) => {
       if (!p.blob || p.blob.size === 0) return; // skip stripped/persisted-empty blobs
       const idxSuffix = photos.length > 1 ? `_${String(i + 1).padStart(2, "0")}` : "";
@@ -104,6 +118,7 @@ function buildUploadPlan(
         filename: `${prefix}_${section}_${ts}${idxSuffix}.${extFor(p.blob)}`,
         contentType: mimeFor(p.blob),
         destination: "receiving",
+        card: { kind, capturedAt: p.timestamp },
       });
     });
   };
@@ -121,6 +136,7 @@ function buildUploadPlan(
         filename: `${prefix}_SHIPPING_LABEL_${boxTag}_${ts}${idxSuffix}.${extFor(p.blob)}`,
         contentType: mimeFor(p.blob),
         destination: "receiving",
+        card: { kind: "shipping-label", description: `Box ${bi + 1} shipping label`, capturedAt: p.timestamp },
       });
     });
     b.damagePhotos.forEach((p, i) => {
@@ -132,10 +148,11 @@ function buildUploadPlan(
         filename: `${prefix}_${boxTag}_DAMAGE_${ts}${idxSuffix}.${extFor(p.blob)}`,
         contentType: mimeFor(p.blob),
         destination: "receiving",
+        card: { kind: "damage", description: `Box ${bi + 1} damage`, capturedAt: p.timestamp },
       });
     });
   });
-  addGroup(session.packingSlipPhotos, "PACKING_SLIP");
+  addGroup(session.packingSlipPhotos, "PACKING_SLIP", "packing-slip");
 
   for (const doc of session.documents) {
     if (!doc.photo.blob || doc.photo.blob.size === 0) continue;
@@ -145,6 +162,11 @@ function buildUploadPlan(
       filename: `${prefix}_DOC_${doc.documentType.toUpperCase()}_${ts}.${extFor(doc.photo.blob)}`,
       contentType: mimeFor(doc.photo.blob),
       destination: "receiving",
+      card: {
+        kind: `document-${String(doc.documentType).toLowerCase()}`,
+        description: `${doc.documentType} supplied with the shipment`,
+        capturedAt: doc.photo.timestamp,
+      },
     });
   }
 
@@ -163,6 +185,13 @@ function buildUploadPlan(
         filename: `${linePrefix}_${ts}${idxSuffix}.${extFor(p.blob)}`,
         contentType: mimeFor(p.blob),
         destination: "receiving",
+        card: {
+          kind: "item",
+          partNumber: line.itemCode,
+          lineNum: line.lineNum,
+          description: line.itemDescription ?? null,
+          capturedAt: p.timestamp,
+        },
       });
 
       // Second copy — flat folder named by part number, for marketing/web use.
@@ -175,6 +204,13 @@ function buildUploadPlan(
         contentType: mimeFor(p.blob),
         conflictBehavior: "rename",
         destination: "web-images",
+        card: {
+          kind: "item",
+          partNumber: line.itemCode,
+          lineNum: line.lineNum,
+          description: line.itemDescription ?? null,
+          capturedAt: p.timestamp,
+        },
       });
     });
 
@@ -188,6 +224,13 @@ function buildUploadPlan(
         filename: `${linePrefix}_NAMEPLATE_${ts}${idxSuffix}.${extFor(p.blob)}`,
         contentType: mimeFor(p.blob),
         destination: "receiving",
+        card: {
+          kind: "nameplate",
+          partNumber: line.itemCode,
+          lineNum: line.lineNum,
+          description: line.itemDescription ?? null,
+          capturedAt: p.timestamp,
+        },
       });
 
       // Web images second copy — suffix _nameplate so it's distinguishable from
@@ -199,6 +242,13 @@ function buildUploadPlan(
         contentType: mimeFor(p.blob),
         conflictBehavior: "rename",
         destination: "web-images",
+        card: {
+          kind: "nameplate",
+          partNumber: line.itemCode,
+          lineNum: line.lineNum,
+          description: line.itemDescription ?? null,
+          capturedAt: p.timestamp,
+        },
       });
     });
 
@@ -212,6 +262,13 @@ function buildUploadPlan(
         filename: `${linePrefix}_QTY_${ts}${idxSuffix}.${extFor(p.blob)}`,
         contentType: mimeFor(p.blob),
         destination: "receiving",
+        card: {
+          kind: "quantity",
+          partNumber: line.itemCode,
+          lineNum: line.lineNum,
+          description: line.itemDescription ?? null,
+          capturedAt: p.timestamp,
+        },
       });
     });
   }
@@ -238,6 +295,7 @@ export async function uploadReceivingSessionToSharePoint(
 ): Promise<ReceivingUploadResult> {
   const { folder, entries } = buildUploadPlan(session, new Date());
   const failed: ReceivingUploadResult["failed"] = [];
+  const landed: UploadEntry[] = [];
   let uploaded = 0;
   let webImagesUploaded = 0;
 
@@ -252,6 +310,7 @@ export async function uploadReceivingSessionToSharePoint(
         entry.contentType,
         entry.conflictBehavior ?? "replace",
       );
+      landed.push(entry);
       if (entry.destination === "web-images") webImagesUploaded++;
       else uploaded++;
     } catch (err) {
@@ -270,6 +329,36 @@ export async function uploadReceivingSessionToSharePoint(
     } catch {
       // Best-effort — don't fail the upload if webUrl lookup hiccups.
     }
+  }
+
+  // Index card per file that actually landed. Best-effort and non-blocking: the
+  // photos are already safe in SharePoint by this point and the receipt is
+  // already in SAP, so nothing here may surface to the receiver. The whole block
+  // is wrapped — building the list must not be able to throw into the upload
+  // path either, not just the network call.
+  try {
+    const cards: FileCard[] = landed.map((entry) => ({
+      container: entry.destination === "web-images" ? "sharepoint-webimages" : "sharepoint-receiving",
+      blobName: `${entry.folder}/${entry.filename}`,
+      originalName: entry.filename,
+      contentType: entry.contentType,
+      sizeBytes: entry.blob?.size ?? null,
+      kind: entry.card?.kind ?? null,
+      partNumber: entry.card?.partNumber ?? null,
+      lineNum: entry.card?.lineNum ?? null,
+      docReference: session.poNumber || null,
+      description: entry.card?.description ?? null,
+      storageUrl: entry.destination === "web-images" ? null : folderUrl ?? null,
+      capturedAt: entry.card?.capturedAt ?? null,
+      sourceApp: "receiving-app",
+    }));
+    void saveFileCards(cards)
+      .then((r) => {
+        if (r) console.log(`[FileCards] ${r.inserted} carded, ${r.duplicate} already known, ${r.failed} failed`);
+      })
+      .catch((err) => console.warn("[FileCards] Card write rejected:", err));
+  } catch (err) {
+    console.warn("[FileCards] Could not build cards; photos are uploaded regardless:", err);
   }
 
   return { uploaded, webImagesUploaded, failed, folder, folderUrl };

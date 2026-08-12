@@ -375,3 +375,55 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     reader.readAsDataURL(blob);
   });
 }
+
+// ---- File cards (the searchable index of captured evidence) ----
+
+export interface FileCard {
+  /** Which store the file lives in, e.g. "sharepoint-receiving". */
+  container: string;
+  /** Path within that store. Unique together with container. */
+  blobName: string;
+  originalName?: string | null;
+  contentType?: string | null;
+  sizeBytes?: number | null;
+  kind?: string | null;
+  partNumber?: string | null;
+  lineNum?: number | null;
+  /** SAP document this evidence belongs to — the PO number for a receipt. */
+  docReference?: string | null;
+  description?: string | null;
+  storageUrl?: string | null;
+  capturedAt?: string | null;
+  sourceApp?: string | null;
+}
+
+export interface SaveFileCardsResult {
+  inserted: number;
+  duplicate: number;
+  failed: number;
+}
+
+/**
+ * Record one index card per captured file.
+ *
+ * Deliberately best-effort: the photos are already safely uploaded by the time
+ * this runs, so a failure here must never surface to the receiver or block a
+ * receipt. Callers should not await this on the critical path.
+ */
+export async function saveFileCards(cards: FileCard[]): Promise<SaveFileCardsResult | null> {
+  if (cards.length === 0) return { inserted: 0, duplicate: 0, failed: 0 };
+  try {
+    const res = await proxyFetch("/api/file-cards", {
+      method: "POST",
+      body: JSON.stringify({ cards }),
+    });
+    if (!res.ok) {
+      console.warn(`[FileCards] Proxy returned ${res.status}; photos are uploaded, cards are not.`);
+      return null;
+    }
+    return res.json();
+  } catch (err) {
+    console.warn("[FileCards] Could not record cards:", err);
+    return null;
+  }
+}
