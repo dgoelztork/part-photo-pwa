@@ -352,13 +352,16 @@ export async function uploadReceivingSessionToSharePoint(
       capturedAt: entry.card?.capturedAt ?? null,
       sourceApp: "receiving-app",
     }));
-    void saveFileCards(cards)
-      .then((r) => {
-        if (r) console.log(`[FileCards] ${r.inserted} carded, ${r.duplicate} already known, ${r.failed} failed`);
-      })
-      .catch((err) => console.warn("[FileCards] Card write rejected:", err));
+    // Awaited on purpose. It was fire-and-forget at first, which lost roughly
+    // four receipts in nine: the receiver taps Done, the page goes to the
+    // background, and an in-flight request is killed before it lands. This runs
+    // inside a block the app is already waiting on to finish the uploads, so a
+    // couple of seconds here costs the receiver nothing — they are already back
+    // on the dashboard. The request is capped, and failure is still swallowed.
+    const r = await saveFileCards(cards);
+    if (r) console.log(`[FileCards] ${r.inserted} carded, ${r.duplicate} already known, ${r.failed} failed`);
   } catch (err) {
-    console.warn("[FileCards] Could not build cards; photos are uploaded regardless:", err);
+    console.warn("[FileCards] Could not record cards; photos are uploaded regardless:", err);
   }
 
   return { uploaded, webImagesUploaded, failed, folder, folderUrl };

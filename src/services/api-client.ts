@@ -413,9 +413,12 @@ export interface SaveFileCardsResult {
 export async function saveFileCards(cards: FileCard[]): Promise<SaveFileCardsResult | null> {
   if (cards.length === 0) return { inserted: 0, duplicate: 0, failed: 0 };
   try {
+    // Capped so a hung request can never hold up the upload block it now runs
+    // inside. Typical write is under three seconds.
     const res = await proxyFetch("/api/file-cards", {
       method: "POST",
       body: JSON.stringify({ cards }),
+      signal: AbortSignal.timeout(20000),
     });
     if (!res.ok) {
       console.warn(`[FileCards] Proxy returned ${res.status}; photos are uploaded, cards are not.`);
