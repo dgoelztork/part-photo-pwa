@@ -131,10 +131,50 @@ async function getAccessToken(): Promise<string> {
   return body.access_token;
 }
 
-/** Map a free-text shipping speed (from label OCR) to a UPS service code. */
-export function shippingSpeedToServiceCode(speed: string | null | undefined): string {
-  const s = (speed ?? "").toLowerCase();
-  if (!s) return "03"; // Ground default
+/**
+ * Tork's SAP shipping-speed codes (OPOR.U_ShipSpeed), normalised to bare
+ * alphanumerics. These are exact codes, not prose, so they're matched before
+ * the free-text heuristics below.
+ *
+ * Why this table exists: "1DAY" hit none of the phrase rules and fell through
+ * to the old Ground default, so every next-day receipt was priced as Ground —
+ * understating one real 58 lb shipment by $319 ($149.59 vs $469.10). "2DAY"
+ * only ever worked by accident, because "2day" happens to contain "2" and
+ * "day". Add new codes here rather than relying on a phrase match.
+ */
+const SAP_SPEED_CODES: Record<string, string> = {
+  GROUND: "03",
+  GRD: "03",
+  GND: "03",
+  "1DAY": "01",
+  "1DAYEARLY": "14",
+  "1DAYAM": "14",
+  "1DAYSAVER": "13",
+  "2DAY": "02",
+  "2DAYAM": "59",
+  "3DAY": "12",
+};
+
+/**
+ * Map a shipping speed to a UPS service code. Accepts both Tork's SAP codes
+ * ("1DAY") and the free-text service level printed on a label ("Next Day Air").
+ *
+ * Returns null when the speed is missing or unrecognised. Callers MUST NOT
+ * substitute a default: Ground is the cheapest service, so guessing it turns
+ * an unknown speed into a confidently-too-low freight number that gets posted
+ * to SAP. Refusing to quote makes the receiver enter the real figure instead.
+ */
+export function shippingSpeedToServiceCode(speed: string | null | undefined): string | null {
+  const raw = (speed ?? "").trim();
+  if (!raw) return null;
+
+  // Exact SAP code match: fold away case, spaces, dashes and underscores so
+  // "1 DAY", "1-day" and "1DAY" all land on the same entry.
+  const code = raw.toUpperCase().replace(/[\s_-]+/g, "");
+  if (SAP_SPEED_CODES[code]) return SAP_SPEED_CODES[code];
+
+  // Free-text service level, as printed on a carrier label.
+  const s = raw.toLowerCase();
   if (s.includes("next day") || s.includes("overnight")) {
     if (s.includes("early")) return "14"; // Next Day Air Early
     if (s.includes("saver")) return "13"; // Next Day Air Saver
@@ -147,7 +187,10 @@ export function shippingSpeedToServiceCode(speed: string | null | undefined): st
   if (s.includes("3") && s.includes("day")) return "12"; // 3 Day Select
   if (s.includes("saver")) return "13";
   if (s.includes("express")) return "07"; // UPS Worldwide Express (international)
-  return "03"; // Ground
+  if (s.includes("ground")) return "03";
+
+  // Unrecognised — say so rather than quoting the cheapest service.
+  return null;
 }
 
 const SERVICE_NAMES: Record<string, string> = {

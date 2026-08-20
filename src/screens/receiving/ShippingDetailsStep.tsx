@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "../../stores/session-store";
 import { StepHeader } from "../../components/layout/StepHeader";
 import { StepNavigation } from "../../components/layout/StepNavigation";
-import { getUpsRate } from "../../services/api-client";
+import { getUpsRate, UnknownShippingSpeedError } from "../../services/api-client";
 import { TailscaleHint } from "../../components/TailscaleHint";
 import type { ShippingBox } from "../../types/session";
 
@@ -148,7 +148,9 @@ function UpsRateRow({
   onChange: (updates: Partial<ShippingBox>) => void;
 }) {
   const session = useSessionStore((s) => s.getActiveSession());
-  const [status, setStatus] = useState<"idle" | "loading" | "ok" | "err" | "unavailable">("idle");
+  const [status, setStatus] = useState<
+    "idle" | "loading" | "ok" | "err" | "unavailable" | "speed"
+  >("idle");
   const [error, setError] = useState<string | null>(null);
   const reqIdRef = useRef(0);
 
@@ -191,7 +193,10 @@ function UpsRateRow({
         onChange({ freightRate: amount.toFixed(2), freightRateLabel: label });
       } catch (e) {
         if (reqId !== reqIdRef.current) return;
-        setStatus("err");
+        // An unusable shipping speed isn't a failure to retry — the rate was
+        // never requested. Keep it out of the red error box so the receiver
+        // knows to key the freight in rather than re-capturing the label.
+        setStatus(e instanceof UnknownShippingSpeedError ? "speed" : "err");
         setError(e instanceof Error ? e.message : "Rate lookup failed");
         onChange({ freightRate: "", freightRateLabel: "" });
       }
@@ -227,6 +232,16 @@ function UpsRateRow({
 
       {eligible && status === "unavailable" && (
         <p className="text-xs text-text-secondary">UPS rating not configured on the proxy.</p>
+      )}
+
+      {eligible && status === "speed" && (
+        <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+          <p className="text-xs text-text">{error}</p>
+          <p className="text-xs text-text-secondary mt-1">
+            Set Shipping Speed above to the service on the label (for example
+            "Next Day Air" or "Ground"), or type the freight cost in by hand.
+          </p>
+        </div>
       )}
 
       {eligible && status === "err" && (

@@ -44,6 +44,13 @@ The receiver walks through these steps in order (status values on `ReceivingSess
 - POs with no SO linked (stock replenishment) return `404 NO_SO_LINKED`, which the UI shows as a plain "nothing to pick" message rather than an error.
 - Printing: `PicklistView` portals to `<body>` and `@media print` in `app.css` hides `#root`, so the sheet flows across pages instead of being clipped to the overlay's scroll box.
 
+## Freight rating
+- `POST /api/freight/ups-rate` rates one box against UPS. The service code comes from the shipment's Shipping Speed field via `shippingSpeedToServiceCode` (`proxy/src/services/ups-rating.ts`).
+- That field holds **either** a Tork SAP code from `OPOR.U_ShipSpeed` (`GROUND`, `1DAY`, `2DAY` — the only values in the last 400 POs) **or** the free-text service level read off the shipping label. The mapper handles both: exact SAP-code table first (case/space/dash-insensitive), then phrase heuristics.
+- Add new SAP codes to `SAP_SPEED_CODES`, not to the phrase rules. `1DAY` matched no phrase and fell through an old `return "03"` Ground default, so every next-day receipt was priced as Ground — one real 58 lb shipment quoted $149.59 instead of $469.10. `2DAY` only ever worked by accident ("2day" contains "2" and "day"). Reported by GGarcia 2026-07-30, who had been correcting it by hand.
+- **Never default an unknown speed to a service code.** Ground is the cheapest UPS service, so a guess becomes a too-low `OPDN.U_InboundFrt` that looks authoritative. Unrecognised or missing speed → mapper returns `null` → route returns `422 SPEED_NOT_RECOGNIZED` / `SPEED_MISSING` → the PWA shows an amber "enter the freight manually" hint (not a red error, since there's nothing to retry).
+- The label's service level is applied to `shippingDetails.shipSpeed` in `BoxPhotoStep.runExtraction`. The BOX step runs before the PO lookup and `applyPoLookup` only fills blanks, so the label (how it actually shipped) beats the PO header (what was ordered) without clobbering receiver edits.
+
 ## Auth
 - User signs in with Azure AD via MSAL (`src/lib/auth.ts`, `src/screens/Login.tsx`).
 - The Azure access token is exchanged for a proxy-issued JWT at `POST /api/auth/login` (`api-client.ts → authenticate()`); the JWT is held in memory and re-fetched on 401.

@@ -51,6 +51,7 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
   const addShippingBox = useSessionStore((s) => s.addShippingBox);
   const removeShippingBox = useSessionStore((s) => s.removeShippingBox);
   const updateShippingBox = useSessionStore((s) => s.updateShippingBox);
+  const updateShippingDetails = useSessionStore((s) => s.updateShippingDetails);
   const addShippingBoxDamagePhoto = useSessionStore((s) => s.addShippingBoxDamagePhoto);
   const removeShippingBoxDamagePhoto = useSessionStore((s) => s.removeShippingBoxDamagePhoto);
   const goToStep = useSessionStore((s) => s.goToStep);
@@ -97,6 +98,18 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
         // the user hasn't picked one yet.
         if (carrier && !useSessionStore.getState().getActiveSession()?.carrier) {
           setCarrier(carrier as Carrier);
+        }
+        // Service level is shipment-level too, and it decides the freight
+        // rate. The label is the better source than the PO header: the PO
+        // records what was *ordered* (and stores terse codes like "1DAY"),
+        // the label records how it actually shipped. This runs before the PO
+        // lookup in the wizard, and applyPoLookup only fills blanks, so the
+        // label wins without clobbering anything the receiver typed.
+        if (
+          ocrFields.shippingSpeed &&
+          !useSessionStore.getState().getActiveSession()?.shippingDetails.shipSpeed
+        ) {
+          updateShippingDetails({ shipSpeed: ocrFields.shippingSpeed });
         }
       })
       .catch((err) => {

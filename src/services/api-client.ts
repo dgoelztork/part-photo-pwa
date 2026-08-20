@@ -286,9 +286,25 @@ export interface UpsRateResult {
 }
 
 /**
+ * Thrown when the shipping speed can't be resolved to a UPS service, so no
+ * rate was requested. Distinct from a failure: there's nothing to retry, the
+ * receiver just needs to enter the freight (or a recognisable speed) by hand.
+ */
+export class UnknownShippingSpeedError extends Error {
+  /** The unresolved speed, or "" when none was present at all. */
+  readonly speed: string;
+  constructor(message: string, speed: string) {
+    super(message);
+    this.name = "UnknownShippingSpeedError";
+    this.speed = speed;
+  }
+}
+
+/**
  * Look up a UPS parcel rate. Returns null if rating is not configured on the
  * proxy (503) — callers should treat this as "rate unavailable" and skip.
- * Throws on validation errors and upstream UPS failures.
+ * Throws UnknownShippingSpeedError when the speed isn't a recognised service,
+ * and Error on validation problems or upstream UPS failures.
  */
 export async function getUpsRate(input: {
   originZip: string;
@@ -303,6 +319,12 @@ export async function getUpsRate(input: {
   if (res.status === 503) return null;
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: "Rate lookup failed" }));
+    if (err.error === "SPEED_NOT_RECOGNIZED" || err.error === "SPEED_MISSING") {
+      throw new UnknownShippingSpeedError(
+        err.message ?? "Shipping speed not recognised",
+        typeof err.speed === "string" ? err.speed : ""
+      );
+    }
     throw new Error(err.message ?? `Rate lookup failed (${res.status})`);
   }
   return res.json();

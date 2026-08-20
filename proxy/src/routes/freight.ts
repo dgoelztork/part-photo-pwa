@@ -67,7 +67,24 @@ router.post("/ups-rate", async (req, res) => {
     return;
   }
 
-  const serviceCode = shippingSpeedToServiceCode(req.body?.shippingSpeed);
+  // No default here on purpose. Ground is the cheapest UPS service, so
+  // guessing it for an unknown speed produces a confidently-too-low freight
+  // figure that gets posted to SAP as U_InboundFrt. Better to quote nothing
+  // and let the receiver key in the real number. (This is what silently
+  // priced every "1DAY" purchase order as Ground.)
+  const rawSpeed = typeof req.body?.shippingSpeed === "string" ? req.body.shippingSpeed.trim() : "";
+  const serviceCode = shippingSpeedToServiceCode(rawSpeed);
+  if (!serviceCode) {
+    res.status(422).json({
+      error: rawSpeed ? "SPEED_NOT_RECOGNIZED" : "SPEED_MISSING",
+      speed: rawSpeed,
+      message: rawSpeed
+        ? `Shipping speed "${rawSpeed}" isn't a recognised UPS service — enter the freight manually`
+        : "No shipping speed on this receipt — enter the freight manually",
+    });
+    return;
+  }
+
   const user = (req as any).user as { email?: string } | undefined;
   const t0 = Date.now();
   try {
