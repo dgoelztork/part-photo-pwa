@@ -1,5 +1,6 @@
 import { uploadFile, uploadFileToSharePoint, getSharePointFolderWebUrl } from "./graph-client";
 import { saveFileCards, type FileCard } from "../services/api-client";
+import { copyToBlob } from "./blob-client";
 import { RECEIVING_SHAREPOINT_PATH, WEB_IMAGES_SHAREPOINT_PATH } from "../config";
 import type { CapturedPhoto } from "../types";
 import type { ReceivingSession, CapturedPhoto as SessionPhoto } from "../types/session";
@@ -322,6 +323,32 @@ export async function uploadReceivingSessionToSharePoint(
     }
   }
 
+  // A second copy into Azure Blob — the warehouse Tork owns outright. SharePoint
+  // stays the place the warehouse works from; this is the copy every other tool
+  // can read, because a SharePoint file can only be fetched by signing in as a
+  // person. Runs after SharePoint on purpose: the receiver's own need is met
+  // first, and by now they have already moved on.
+  let blobResult: Awaited<ReturnType<typeof copyToBlob>> = { uploaded: [], failed: [], container: null };
+  if (landed.length > 0) {
+    try {
+      blobResult = await copyToBlob(
+        landed.map((entry) => ({
+          blobName: `${entry.folder}/${entry.filename}`,
+          contentType: entry.contentType,
+          blob: entry.blob,
+        })),
+        undefined,
+        (done, total) => onProgress?.({ current: done, total, fileName: `warehouse copy ${done}/${total}` }),
+      );
+      if (blobResult.failed.length)
+        console.warn(`[Blob] ${blobResult.uploaded.length} copied, ${blobResult.failed.length} not:`, blobResult.failed);
+      else console.log(`[Blob] ${blobResult.uploaded.length} copied to the warehouse`);
+    } catch (err) {
+      console.warn("[Blob] Warehouse copy failed entirely; photos are in SharePoint regardless:", err);
+    }
+  }
+  const copiedToBlob = new Set(blobResult.uploaded);
+
   let folderUrl: string | undefined;
   if (uploaded > 0) {
     try {
@@ -351,6 +378,10 @@ export async function uploadReceivingSessionToSharePoint(
       storageUrl: entry.destination === "web-images" ? null : folderUrl ?? null,
       capturedAt: entry.card?.capturedAt ?? null,
       sourceApp: "receiving-app",
+      // Which warehouse copy exists, if any. Deliberately left null when the
+      // copy did not land, so a later job can tell what still needs backfilling
+      // instead of assuming every photo is reachable.
+      blobContainer: copiedToBlob.has(`${entry.folder}/${entry.filename}`) ? blobResult.container : null,
     }));
     // Awaited on purpose. It was fire-and-forget at first, which lost roughly
     // four receipts in nine: the receiver taps Done, the page goes to the

@@ -68,6 +68,13 @@ export interface FileCardInput {
   capturedAt?: string | null;
   sourceApp?: string | null;
   vesselText?: string | null;
+  /**
+   * The Azure container holding a second copy, or null if there isn't one.
+   * A SharePoint file can only be fetched by signing in as the person who put
+   * it there, so nothing else can read it. This records whether the file is
+   * also somewhere any Tork tool can reach. Null means it still needs copying.
+   */
+  blobContainer?: string | null;
 }
 
 export interface InsertResult {
@@ -80,16 +87,28 @@ const INSERT_SQL = `
 INSERT INTO dbo.file_cards
   (container, blob_name, original_name, content_type, size_bytes,
    kind, part_number, line_num, doc_reference, description,
-   storage_url, captured_at, captured_by, source_app, vessel_text, needs_review)
+   storage_url, captured_at, captured_by, source_app, vessel_text,
+   blob_container, needs_review)
 SELECT
   @container, @blobName, @originalName, @contentType, @sizeBytes,
   @kind, @partNumber, @lineNum, @docReference, @description,
   @storageUrl, @capturedAt, @capturedBy, @sourceApp, @vesselText,
+  @blobContainer,
   CASE WHEN @partNumber IS NULL THEN 1 ELSE 0 END
 WHERE NOT EXISTS (
   SELECT 1 FROM dbo.file_cards
   WHERE container = @container AND blob_name = @blobName
 );`;
+
+/**
+ * A card can be written before its warehouse copy lands, and a re-run of a
+ * receipt must not lose the fact that the copy exists. So the container is also
+ * settable on a row that is already there — but only from null to a value,
+ * never overwriting one that is already recorded.
+ */
+const MARK_COPIED_SQL = `
+UPDATE dbo.file_cards SET blob_container = @blobContainer
+WHERE container = @container AND blob_name = @blobName AND blob_container IS NULL;`;
 
 function trim(value: unknown, max: number): string | null {
   if (typeof value !== "string") return null;
@@ -142,12 +161,22 @@ export async function insertFileCards(
         .input("capturedAt", sql.DateTime2, capturedAt ?? new Date())
         .input("capturedBy", sql.NVarChar(200), trim(capturedBy, 200))
         .input("sourceApp", sql.NVarChar(60), trim(card.sourceApp, 60) ?? "receiving-app")
-        .input("vesselText", sql.NVarChar(200), trim(card.vesselText, 200));
+        .input("vesselText", sql.NVarChar(200), trim(card.vesselText, 200))
+        .input("blobContainer", sql.NVarChar(64), trim(card.blobContainer, 64));
 
       const res = await request.query(INSERT_SQL);
       const affected = res.rowsAffected?.[0] ?? 0;
-      if (affected > 0) result.inserted++;
-      else result.duplicate++;
+      if (affected > 0) {
+        result.inserted++;
+      } else {
+        result.duplicate++;
+        // The row was already there. If this run copied the file to the
+        // warehouse and the existing row does not say so, record it — otherwise
+        // a retried receipt loses the fact that the copy exists.
+        if (trim(card.blobContainer, 64)) {
+          try { await request.query(MARK_COPIED_SQL); } catch { /* the card is intact either way */ }
+        }
+      }
     } catch (err) {
       result.failed++;
       console.error(

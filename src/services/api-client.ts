@@ -417,6 +417,13 @@ export interface FileCard {
   storageUrl?: string | null;
   capturedAt?: string | null;
   sourceApp?: string | null;
+  /**
+   * The Azure container holding a second copy, or null if there isn't one.
+   * SharePoint files can only be fetched by signing in as the person who put
+   * them there; this says whether the file is also somewhere any Tork tool can
+   * read. Null means it still needs copying across.
+   */
+  blobContainer?: string | null;
 }
 
 export interface SaveFileCardsResult {
@@ -449,6 +456,53 @@ export async function saveFileCards(cards: FileCard[]): Promise<SaveFileCardsRes
     return res.json();
   } catch (err) {
     console.warn("[FileCards] Could not record cards:", err);
+    return null;
+  }
+}
+
+// --- Azure Blob: the warehouse ------------------------------------------------
+
+export interface BlobUploadPermission {
+  url: string;
+  blobName: string;
+  container: string;
+  expiresAt: string;
+}
+
+export interface BlobPermissionsResult {
+  permissions: BlobUploadPermission[];
+  refused: { blobName: string; reason: string }[];
+}
+
+/**
+ * Ask the proxy for permission to write these files straight to Azure.
+ *
+ * The photos themselves never pass through the proxy — a receiving session is a
+ * dozen files of several megabytes each, and routing that through the server
+ * would slow the receiver down for no benefit. Each permission is write-only,
+ * covers one named file, and lasts fifteen minutes.
+ *
+ * Returns null on any failure. The blob copy is an improvement over SharePoint,
+ * never a requirement, so nothing here may interrupt a receipt.
+ */
+export async function getBlobUploadPermissions(
+  files: { blobName: string; contentType: string }[],
+  container?: string,
+): Promise<BlobPermissionsResult | null> {
+  if (files.length === 0) return { permissions: [], refused: [] };
+  try {
+    const res = await proxyFetch("/api/blob/upload-permissions", {
+      method: "POST",
+      body: JSON.stringify({ container, files }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) {
+      console.warn(`[Blob] Proxy returned ${res.status}; photos are in SharePoint, no second copy.`);
+      return null;
+    }
+    return res.json();
+  } catch (err) {
+    console.warn("[Blob] Could not get upload permissions:", err);
     return null;
   }
 }
