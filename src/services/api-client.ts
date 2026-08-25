@@ -424,6 +424,12 @@ export interface FileCard {
    * read. Null means it still needs copying across.
    */
   blobContainer?: string | null;
+  /**
+   * SHA-256 of the file's bytes, lowercase hex. Lets the same picture be
+   * recognised twice — a retried upload, or the same nameplate photographed on
+   * two receipts. Null when it could not be taken; the file is stored anyway.
+   */
+  sha256?: string | null;
 }
 
 export interface SaveFileCardsResult {

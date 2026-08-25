@@ -1,6 +1,7 @@
 import { uploadFile, uploadFileToSharePoint, getSharePointFolderWebUrl } from "./graph-client";
 import { saveFileCards, type FileCard } from "../services/api-client";
 import { copyToBlob } from "./blob-client";
+import { fingerprintAll } from "./file-hash";
 import { RECEIVING_SHAREPOINT_PATH, WEB_IMAGES_SHAREPOINT_PATH } from "../config";
 import type { CapturedPhoto } from "../types";
 import type { ReceivingSession, CapturedPhoto as SessionPhoto } from "../types/session";
@@ -363,6 +364,16 @@ export async function uploadReceivingSessionToSharePoint(
   // already in SAP, so nothing here may surface to the receiver. The whole block
   // is wrapped — building the list must not be able to throw into the upload
   // path either, not just the network call.
+  // A fingerprint per file, taken while the file is still in hand. Doing this
+  // later would mean reading every photo back out of storage. A file that
+  // cannot be fingerprinted is still carded — the fingerprint is a convenience,
+  // the card is the record.
+  const prints = await fingerprintAll(
+    landed,
+    (entry) => `${entry.folder}/${entry.filename}`,
+    (entry) => entry.blob,
+  ).catch(() => new Map<string, string | null>());
+
   try {
     const cards: FileCard[] = landed.map((entry) => ({
       container: entry.destination === "web-images" ? "sharepoint-webimages" : "sharepoint-receiving",
@@ -382,6 +393,7 @@ export async function uploadReceivingSessionToSharePoint(
       // copy did not land, so a later job can tell what still needs backfilling
       // instead of assuming every photo is reachable.
       blobContainer: copiedToBlob.has(`${entry.folder}/${entry.filename}`) ? blobResult.container : null,
+      sha256: prints.get(`${entry.folder}/${entry.filename}`) ?? null,
     }));
     // Awaited on purpose. It was fire-and-forget at first, which lost roughly
     // four receipts in nine: the receiver taps Done, the page goes to the

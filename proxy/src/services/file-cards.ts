@@ -75,6 +75,12 @@ export interface FileCardInput {
    * also somewhere any Tork tool can reach. Null means it still needs copying.
    */
   blobContainer?: string | null;
+  /**
+   * SHA-256 of the file's bytes, lowercase hex, taken in the browser while the
+   * file was in hand. Lets the same picture be recognised twice. Null when it
+   * could not be taken — the card is still written.
+   */
+  sha256?: string | null;
 }
 
 export interface InsertResult {
@@ -88,12 +94,12 @@ INSERT INTO dbo.file_cards
   (container, blob_name, original_name, content_type, size_bytes,
    kind, part_number, line_num, doc_reference, description,
    storage_url, captured_at, captured_by, source_app, vessel_text,
-   blob_container, needs_review)
+   blob_container, sha256, needs_review)
 SELECT
   @container, @blobName, @originalName, @contentType, @sizeBytes,
   @kind, @partNumber, @lineNum, @docReference, @description,
   @storageUrl, @capturedAt, @capturedBy, @sourceApp, @vesselText,
-  @blobContainer,
+  @blobContainer, @sha256,
   CASE WHEN @partNumber IS NULL THEN 1 ELSE 0 END
 WHERE NOT EXISTS (
   SELECT 1 FROM dbo.file_cards
@@ -162,7 +168,10 @@ export async function insertFileCards(
         .input("capturedBy", sql.NVarChar(200), trim(capturedBy, 200))
         .input("sourceApp", sql.NVarChar(60), trim(card.sourceApp, 60) ?? "receiving-app")
         .input("vesselText", sql.NVarChar(200), trim(card.vesselText, 200))
-        .input("blobContainer", sql.NVarChar(64), trim(card.blobContainer, 64));
+        .input("blobContainer", sql.NVarChar(64), trim(card.blobContainer, 64))
+        // Exactly 64 hex characters or nothing — a half-written fingerprint is
+        // worse than none, because it would match nothing and look like a real one.
+        .input("sha256", sql.Char(64), /^[0-9a-f]{64}$/.test(String(card.sha256 ?? "")) ? String(card.sha256) : null);
 
       const res = await request.query(INSERT_SQL);
       const affected = res.rowsAffected?.[0] ?? 0;
