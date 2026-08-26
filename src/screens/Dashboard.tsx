@@ -1,8 +1,8 @@
-import { useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/auth-store";
 import { useSessionStore } from "../stores/session-store";
-import { getProxyUrl, setProxyUrl, checkProxyHealth, DEFAULT_PROXY_URL } from "../services/api-client";
+import { getProxyUrl, setProxyUrl, checkProxyHealth, fetchPrinters, DEFAULT_PROXY_URL } from "../services/api-client";
 import { TailscaleHint } from "../components/TailscaleHint";
 import type { ReceivingSession } from "../types/session";
 import { STEP_LABELS } from "../types/session";
@@ -14,6 +14,15 @@ export function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [proxyUrlInput, setProxyUrlInput] = useState(getProxyUrl());
   const [proxyStatus, setProxyStatus] = useState<"idle" | "checking" | "ok" | "error">("idle");
+  // Label printing only appears once printers are configured on the proxy.
+  // Until then the button would lead to a dead end for a receiver, so hide it.
+  const [hasPrinters, setHasPrinters] = useState(false);
+
+  useEffect(() => {
+    void fetchPrinters()
+      .then((printers) => setHasPrinters(printers.length > 0))
+      .catch(() => setHasPrinters(false));
+  }, []);
 
   const handleCheckProxy = async () => {
     setProxyUrl(proxyUrlInput);
@@ -84,6 +93,18 @@ export function Dashboard() {
       >
         Start New Receiving Session
       </button>
+
+      {/* Label printing — a standalone job, not part of a receiving session,
+          so it gets its own entry rather than a step in the wizard. */}
+      {hasPrinters && (
+      <button
+        onClick={() => navigate("/labels")}
+        className="w-full py-4 rounded-xl bg-surface border border-primary text-primary
+                   font-semibold active:scale-[0.98] transition-transform"
+      >
+        Print Item Labels
+      </button>
+      )}
 
       {/* Settings toggle */}
       <button

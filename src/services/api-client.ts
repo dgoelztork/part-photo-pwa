@@ -255,6 +255,111 @@ export async function fetchPicklist(poNumber: string): Promise<PicklistResult> {
   return res.json();
 }
 
+export interface LabelPrinter {
+  id: string;
+  name: string;
+  /** SAP warehouse codes this printer serves. */
+  warehouses: string[];
+}
+
+export interface LabelSOLine {
+  lineNum: number;
+  customerLineNo: string;
+  itemCode: string;
+  itemDescription: string;
+  orderedQty: number;
+  openQty: number;
+  warehouse: string;
+  uom: string;
+  closed: boolean;
+  customerPartNo: string;
+  freeText: string;
+}
+
+export interface LabelSalesOrder {
+  soNumber: number;
+  soDocEntry: number;
+  customerCode: string;
+  customerName: string;
+  customerPO: string;
+  shipToCode: string;
+  vesselJob: string;
+  orderDate: string | null;
+  dueDate: string | null;
+  soStatus: string;
+  lines: LabelSOLine[];
+}
+
+export interface PrintLabelInput {
+  itemCode: string;
+  itemDescription: string;
+  orderedQty?: number | null;
+  soNumber?: number | string | null;
+  customerName?: string | null;
+  customerPartNo?: string | null;
+  warehouse?: string | null;
+  copies: number;
+  printerId?: string;
+}
+
+export interface PrintLabelResult {
+  sent: boolean;
+  copies: number;
+  printerId: string;
+  printerName: string;
+  itemCode: string;
+}
+
+/** Thrown when no printer serves the line's site, so nothing was printed. */
+export class NoPrinterError extends Error {
+  readonly printers: LabelPrinter[];
+  constructor(message: string, printers: LabelPrinter[]) {
+    super(message);
+    this.name = "NoPrinterError";
+    this.printers = printers;
+  }
+}
+
+/** Label printers configured on the proxy. */
+export async function fetchPrinters(): Promise<LabelPrinter[]> {
+  const res = await proxyFetch("/api/labels/printers");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Printer lookup failed" }));
+    throw new Error(err.message ?? `Printer lookup failed (${res.status})`);
+  }
+  const data = await res.json();
+  return data.printers ?? [];
+}
+
+/** Look up a sales order and its lines for label printing. */
+export async function lookupSalesOrder(soNumber: string): Promise<LabelSalesOrder> {
+  const res = await proxyFetch(`/api/labels/sales-order/${encodeURIComponent(soNumber)}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Sales order lookup failed" }));
+    throw new Error(err.message ?? `Sales order lookup failed (${res.status})`);
+  }
+  return res.json();
+}
+
+/**
+ * Send item labels to the site printer. Resolving means the printer accepted
+ * the bytes — not that a label physically came out.
+ */
+export async function printItemLabels(input: PrintLabelInput): Promise<PrintLabelResult> {
+  const res = await proxyFetch("/api/labels/print", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Print failed" }));
+    if (err.error === "NO_PRINTER_FOR_WAREHOUSE" || err.error === "NO_PRINTERS_CONFIGURED") {
+      throw new NoPrinterError(err.message ?? "No printer available", err.printers ?? []);
+    }
+    throw new Error(err.message ?? `Print failed (${res.status})`);
+  }
+  return res.json();
+}
+
 /** Check if the proxy is reachable. */
 export async function checkProxyHealth(): Promise<boolean> {
   try {

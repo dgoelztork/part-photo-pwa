@@ -51,6 +51,18 @@ The receiver walks through these steps in order (status values on `ReceivingSess
 - **Never default an unknown speed to a service code.** Ground is the cheapest UPS service, so a guess becomes a too-low `OPDN.U_InboundFrt` that looks authoritative. Unrecognised or missing speed → mapper returns `null` → route returns `422 SPEED_NOT_RECOGNIZED` / `SPEED_MISSING` → the PWA shows an amber "enter the freight manually" hint (not a red error, since there's nothing to retry).
 - The label's service level is applied to `shippingDetails.shipSpeed` in `BoxPhotoStep.runExtraction`. The BOX step runs before the PO lookup and `applyPoLookup` only fills blanks, so the label (how it actually shipped) beats the PO header (what was ordered) without clobbering receiver edits.
 
+## Item label printing
+- Standalone feature (Dylan's request, Aug 2026), reached from its own Dashboard button — **not** part of the receiving wizard. Flow: search a sales order → pick the part → enter how many labels (defaults to the SO line quantity) → send to the Zebra at that site.
+- `GET /api/labels/sales-order/:soNumber` returns every line, closed ones included: labels get reprinted for stock that already shipped.
+- `POST /api/labels/print` builds ZPL and streams it to the printer; `POST /api/labels/preview` returns the same ZPL without printing, which is how to check the layout with no printer present.
+- **The ZPL layout in `proxy/src/services/zpl.ts` is PROVISIONAL.** It assumes 4"x2" at 203 dpi and guesses the fields. Dylan is supplying a sample of Tork's existing item label; replacing `buildItemLabel` is the whole job of matching it. Everything else is layout-agnostic. Do not run production stock through it until it's been matched and test-printed.
+- Printers come from the `LABEL_PRINTERS` env var (JSON array of `{id,name,host,port,warehouses}`). Warehouse codes route a line to its site: Alameda is `01`/`01A`/`2`/`S`/`02`, **Pascagoula is `3`** ("Mississippi Warehouse" in SAP).
+- There is deliberately **no fallback to "the first printer"** when no printer claims a warehouse — a mis-routed label prints 2,000 miles from whoever asked for it. The route 422s and the UI offers a manual picker instead.
+- The Dashboard button is hidden while `LABEL_PRINTERS` is empty, so the feature stays invisible until a site is actually wired up.
+- Raw port 9100 is fire-and-forget: a successful write means the printer accepted the bytes, **not** that a label came out. Out of media, head open and ribbon faults are all invisible to us — the UI says "sent", never "printed".
+- `escapeZpl` strips `^` and `~` from field data. SAP descriptions are free text, and an embedded `^XZ` would silently truncate the label.
+- **Open blocker — Pascagoula has no network path.** TORK-APP has only `192.168.201.0/24` plus Tailscale, and no route to any other private subnet. An Alameda printer is directly reachable; a Pascagoula one is not. It needs a Tailscale subnet router at the site (or the printer on the tailnet) before warehouse `3` can print. `host` is just an address, so nothing in the code changes once a path exists.
+
 ## Auth
 - User signs in with Azure AD via MSAL (`src/lib/auth.ts`, `src/screens/Login.tsx`).
 - The Azure access token is exchanged for a proxy-issued JWT at `POST /api/auth/login` (`api-client.ts → authenticate()`); the JWT is held in memory and re-fetched on 401.

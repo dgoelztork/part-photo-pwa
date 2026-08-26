@@ -4,6 +4,7 @@ import { useAuthStore } from "./stores/auth-store";
 import { Login } from "./screens/Login";
 import { Dashboard } from "./screens/Dashboard";
 import { ReceivingWizard } from "./screens/receiving/ReceivingWizard";
+import { LabelPrinting } from "./screens/labels/LabelPrinting";
 
 export function App() {
   const { initialize, isAuthenticated, isLoading } = useAuthStore();
@@ -33,6 +34,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/receive/:sessionId" element={<ReceivingWizard />} />
+        <Route path="/labels" element={<LabelPrinting />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </HashRouter>
