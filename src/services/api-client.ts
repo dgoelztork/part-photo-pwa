@@ -360,6 +360,49 @@ export async function printItemLabels(input: PrintLabelInput): Promise<PrintLabe
   return res.json();
 }
 
+export type FeedbackKind = "bug" | "idea";
+
+export interface FeedbackResult {
+  id: number;
+  kind: string;
+  title: string;
+  status: string;
+  createdAt: string | null;
+}
+
+/**
+ * File a bug or idea. Lands on the same board the Scupper feedback goes to,
+ * tagged so it's clear it came from Receiving.
+ */
+export async function submitFeedback(input: {
+  kind: FeedbackKind;
+  title: string;
+  body?: string;
+  page?: string;
+  /** Optional photo as a data URL. */
+  photo?: string | null;
+}): Promise<FeedbackResult> {
+  const res = await proxyFetch("/api/feedback", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Could not send feedback" }));
+    throw new Error(err.message ?? `Could not send feedback (${res.status})`);
+  }
+  return res.json();
+}
+
+/**
+ * Shrink a camera photo and encode it for feedback. Reuses the same resize
+ * path as the vision calls so a full-resolution phone shot doesn't travel as
+ * a multi-megabyte data URL.
+ */
+export async function photoToDataUrl(blob: Blob): Promise<string> {
+  const resized = await resizeForVision(blob, 1280);
+  return blobToDataUrl(resized);
+}
+
 /** Check if the proxy is reachable. */
 export async function checkProxyHealth(): Promise<boolean> {
   try {

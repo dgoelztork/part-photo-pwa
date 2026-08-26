@@ -14,6 +14,7 @@ import picklistRoutes from "./routes/picklist.js";
 import fileCardRoutes from "./routes/file-cards.js";
 import blobRoutes from "./routes/blob.js";
 import labelRoutes from "./routes/labels.js";
+import feedbackRoutes from "./routes/feedback.js";
 
 function requireConfig() {
   const errors: string[] = [];
@@ -66,6 +67,7 @@ app.use("/api/picklist", requireAuth, picklistRoutes);
 app.use("/api/file-cards", requireAuth, fileCardRoutes);
 app.use("/api/blob", requireAuth, blobRoutes);
 app.use("/api/labels", requireAuth, labelRoutes);
+app.use("/api/feedback", requireAuth, feedbackRoutes);
 
 // JSON error handler — keeps body-parser failures from leaking stack traces as HTML.
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

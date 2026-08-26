@@ -5,6 +5,7 @@ import { Login } from "./screens/Login";
 import { Dashboard } from "./screens/Dashboard";
 import { ReceivingWizard } from "./screens/receiving/ReceivingWizard";
 import { LabelPrinting } from "./screens/labels/LabelPrinting";
+import { FeedbackButton } from "./components/FeedbackButton";
 
 export function App() {
   const { initialize, isAuthenticated, isLoading } = useAuthStore();
@@ -37,6 +38,8 @@ export function App() {
         <Route path="/labels" element={<LabelPrinting />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      {/* Inside the router so it can record which screen they were on. */}
+      <FeedbackButton />
     </HashRouter>
   );
 }

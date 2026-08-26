@@ -63,6 +63,14 @@ The receiver walks through these steps in order (status values on `ReceivingSess
 - `escapeZpl` strips `^` and `~` from field data. SAP descriptions are free text, and an embedded `^XZ` would silently truncate the label.
 - **Open blocker — Pascagoula has no network path.** TORK-APP has only `192.168.201.0/24` plus Tailscale, and no route to any other private subnet. An Alameda printer is directly reachable; a Pascagoula one is not. It needs a Tailscale subnet router at the site (or the printer on the tailnet) before warehouse `3` can print. `host` is just an address, so nothing in the code changes once a path exists.
 
+## Feedback
+- Floating button (`src/components/FeedbackButton.tsx`) mounted inside the router in `App.tsx`, so a receiver can file a bug or idea from any screen and the submission records which one.
+- **Submissions land on Scupper's board, not a second list.** `POST /api/feedback` inserts into the `feedback` table in Scupper's Postgres (`FEEDBACK_DATABASE_URL`, localhost — both apps run on TORK-APP). Rows are tagged `page = "receiving:<path>"`; Scupper's own rows carry paths like `/rfq/375281`.
+- **Scupper owns that schema.** If it migrates the table, the insert in `proxy/src/services/feedback-store.ts` is what breaks — it names every column explicitly so a mismatch fails loudly rather than writing a bad row.
+- **No notification email fires for receiving-submitted feedback.** Scupper sends that (or kicks off AI triage) from inside its own POST handler, and nothing re-scans the table for rows arriving by other routes. Wiring it up would need a service-auth path in Scupper — its API accepts Azure AD bearer tokens only, with no server-to-server door. The rows still appear on the board.
+- Scupper auto-captures the screen with html2canvas; this app offers **the camera** instead. It's a phone in a warehouse — the useful picture is the part or the shelf, and screen capture is unreliable inside an iOS web app. The photo goes into the same `screenshot` column, so the board renders it either way.
+- Submitter comes from the verified token, never the request body (same rule as file-cards). A photo that fails validation or encoding is dropped with a log line rather than costing the receiver their written report.
+
 ## Auth
 - User signs in with Azure AD via MSAL (`src/lib/auth.ts`, `src/screens/Login.tsx`).
 - The Azure access token is exchanged for a proxy-issued JWT at `POST /api/auth/login` (`api-client.ts → authenticate()`); the JWT is held in memory and re-fetched on 401.
