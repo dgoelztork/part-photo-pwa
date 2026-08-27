@@ -30,3 +30,4 @@ proxy/certs/
 *.sw?
 
 tsconfig.tsbuildinfo
+proxy/data/

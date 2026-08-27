@@ -6,6 +6,7 @@ import { Dashboard } from "./screens/Dashboard";
 import { ReceivingWizard } from "./screens/receiving/ReceivingWizard";
 import { LabelPrinting } from "./screens/labels/LabelPrinting";
 import { FeedbackButton } from "./components/FeedbackButton";
+import { FeedbackBoard } from "./screens/FeedbackBoard";
 
 export function App() {
   const { initialize, isAuthenticated, isLoading } = useAuthStore();
@@ -36,6 +37,7 @@ export function App() {
         <Route path="/" element={<Dashboard />} />
         <Route path="/receive/:sessionId" element={<ReceivingWizard />} />
         <Route path="/labels" element={<LabelPrinting />} />
+        <Route path="/feedback" element={<FeedbackBoard />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       {/* Inside the router so it can record which screen they were on. */}

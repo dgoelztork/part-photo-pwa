@@ -9,16 +9,12 @@ import { TailscaleHint } from "./TailscaleHint";
  * Floating feedback button, mounted globally so a receiver can report a bug or
  * suggest an idea from wherever they are — mid-receipt included.
  *
- * Ported from Scupper's FeedbackButton, with two deliberate differences:
- *
- *  - Submissions go to the SAME board as Scupper's, tagged "receiving:", so
- *    there's one list to read rather than two.
- *  - Scupper auto-captures the screen with html2canvas. This is a phone app in
- *    a warehouse, where the useful picture is usually the part or the shelf,
- *    not the screen — and screen capture is unreliable inside an iOS web app.
- *    So it offers the camera the app already uses instead. The photo lands in
- *    the same column Scupper's screenshots do, so the board renders it either
- *    way.
+ * Modelled on Scupper's FeedbackButton, but this app keeps its own list — the
+ * two are deliberately separate systems. One difference worth noting: Scupper
+ * auto-captures the screen with html2canvas. This is a phone in a warehouse,
+ * where the useful picture is usually the part or the shelf rather than the
+ * screen, and screen capture is unreliable inside an iOS web app. So it offers
+ * the camera the app already uses instead.
  */
 export function FeedbackButton() {
   const [open, setOpen] = useState(false);
@@ -91,7 +87,7 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
         <div className="text-center py-4">
           <p className="text-lg font-bold text-success">Thanks — sent</p>
           <p className="text-sm text-text-secondary mt-1">
-            It's on the list with everything else the team has reported.
+            It's been added to the feedback list.
           </p>
           <button
             onClick={onClose}

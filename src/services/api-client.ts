@@ -361,27 +361,28 @@ export async function printItemLabels(input: PrintLabelInput): Promise<PrintLabe
 }
 
 export type FeedbackKind = "bug" | "idea";
+export type FeedbackStatus = "open" | "in_progress" | "closed";
 
-export interface FeedbackResult {
+export interface FeedbackItem {
   id: number;
   kind: string;
   title: string;
+  body: string | null;
+  page: string | null;
   status: string;
-  createdAt: string | null;
+  userEmail: string | null;
+  hasPhoto: boolean;
+  createdAt: string;
 }
 
-/**
- * File a bug or idea. Lands on the same board the Scupper feedback goes to,
- * tagged so it's clear it came from Receiving.
- */
+/** File a bug or idea against the receiving app. */
 export async function submitFeedback(input: {
   kind: FeedbackKind;
   title: string;
   body?: string;
   page?: string;
-  /** Optional photo as a data URL. */
   photo?: string | null;
-}): Promise<FeedbackResult> {
+}): Promise<FeedbackItem> {
   const res = await proxyFetch("/api/feedback", {
     method: "POST",
     body: JSON.stringify(input),
@@ -391,6 +392,44 @@ export async function submitFeedback(input: {
     throw new Error(err.message ?? `Could not send feedback (${res.status})`);
   }
   return res.json();
+}
+
+/** Everything filed so far, newest first. */
+export async function fetchFeedback(status?: FeedbackStatus): Promise<FeedbackItem[]> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  const res = await proxyFetch(`/api/feedback${qs}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Could not load feedback" }));
+    throw new Error(err.message ?? `Could not load feedback (${res.status})`);
+  }
+  const data = await res.json();
+  return data.feedback ?? [];
+}
+
+/** Move a submission along. */
+export async function setFeedbackStatus(
+  id: number,
+  status: FeedbackStatus
+): Promise<FeedbackItem> {
+  const res = await proxyFetch(`/api/feedback/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Could not update feedback" }));
+    throw new Error(err.message ?? `Could not update feedback (${res.status})`);
+  }
+  return res.json();
+}
+
+/**
+ * Photo for one submission, as a blob URL. Goes through proxyFetch because the
+ * image endpoint needs the auth header — a plain <img src> would 401.
+ */
+export async function fetchFeedbackPhotoUrl(id: number): Promise<string> {
+  const res = await proxyFetch(`/api/feedback/${id}/photo`);
+  if (!res.ok) throw new Error(`Could not load photo (${res.status})`);
+  return URL.createObjectURL(await res.blob());
 }
 
 /**

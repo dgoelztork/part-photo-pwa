@@ -106,6 +106,13 @@ export function Dashboard() {
       </button>
       )}
 
+      <button
+        onClick={() => navigate("/feedback")}
+        className="w-full py-3 rounded-xl bg-surface border border-border text-text font-medium"
+      >
+        Feedback
+      </button>
+
       {/* Settings toggle */}
       <button
         onClick={() => setShowSettings(!showSettings)}
