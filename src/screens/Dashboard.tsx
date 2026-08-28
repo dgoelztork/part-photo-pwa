@@ -7,6 +7,39 @@ import { TailscaleHint } from "../components/TailscaleHint";
 import type { ReceivingSession } from "../types/session";
 import { STEP_LABELS } from "../types/session";
 
+/**
+ * GRPO numbers whose missing photos have been seen and acknowledged.
+ *
+ * Dismissal is per receipt, not a blanket "hide this banner". The whole point
+ * of the banner is that this failure went unnoticed for two months — a switch
+ * that silences it permanently would rebuild exactly that hole. Acknowledging
+ * today's list still lets tomorrow's failure raise it again.
+ *
+ * Stored per device, so one receiver clearing it doesn't hide it from another.
+ * Reads are defensive: a private window or blocked storage must not break the
+ * dashboard.
+ */
+const ACK_KEY = "receiving.missingPhotos.acknowledged";
+
+function readAcknowledged(): number[] {
+  try {
+    const raw = localStorage.getItem(ACK_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((n) => typeof n === "number") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeAcknowledged(docNums: number[]): void {
+  try {
+    localStorage.setItem(ACK_KEY, JSON.stringify(docNums));
+  } catch {
+    // Best-effort — the banner reappearing is a far smaller problem than a
+    // dashboard that throws on open.
+  }
+}
+
 export function Dashboard() {
   const { userName, signOut } = useAuthStore();
   const { sessions, createSession, resumeSession, deleteSession } = useSessionStore();
@@ -21,13 +54,25 @@ export function Dashboard() {
   // Receipts whose photos never landed. Silent by nature — the phone that
   // failed can't report it — so the dashboard asks SAP on every open.
   const [photoAudit, setPhotoAudit] = useState<PhotoAuditResult | null>(null);
+  const [acknowledged, setAcknowledged] = useState<number[]>(readAcknowledged);
 
   useEffect(() => {
     void fetchPrinters()
       .then((printers) => setHasPrinters(printers.length > 0))
       .catch(() => setHasPrinters(false));
     void fetchPhotoAudit(7)
-      .then(setPhotoAudit)
+      .then((audit) => {
+        setPhotoAudit(audit);
+        // Drop acknowledgements for receipts that have aged out of the audit
+        // window, so the stored list tracks the problem rather than growing
+        // without bound.
+        setAcknowledged((prev) => {
+          const live = new Set(audit.missing.map((m) => m.docNum));
+          const kept = prev.filter((n) => live.has(n));
+          if (kept.length !== prev.length) writeAcknowledged(kept);
+          return kept;
+        });
+      })
       .catch((err) => console.warn("[Dashboard] Photo audit unavailable:", err));
   }, []);
 
@@ -94,32 +139,48 @@ export function Dashboard() {
 
       {/* Photos that never made it. Deliberately loud and deliberately at the
           top: this failure hid for two months because nothing surfaced it. */}
-      {photoAudit && photoAudit.missing.length > 0 && (
-        <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 animate-slide-in">
-          <p className="text-sm font-semibold text-text">
-            {photoAudit.missing.length} recent receipt
-            {photoAudit.missing.length === 1 ? "" : "s"} missing photos
-          </p>
-          <p className="text-xs text-text-secondary mt-1">
-            These posted to SAP, but their photos never reached SharePoint. If the
-            pictures are still on the phone that took them, add them by hand.
-          </p>
-          <div className="mt-2 flex flex-col gap-1">
-            {photoAudit.missing.slice(0, 6).map((m) => (
-              <p key={m.docNum} className="text-xs text-text">
-                <span className="font-medium">GRPO {m.docNum}</span>
-                {m.docDate ? ` · ${m.docDate}` : ""}
-                {m.receivedBy ? ` · ${m.receivedBy.split("@")[0]}` : ""}
-              </p>
-            ))}
-            {photoAudit.missing.length > 6 && (
-              <p className="text-xs text-text-secondary">
-                and {photoAudit.missing.length - 6} more
-              </p>
-            )}
+      {(() => {
+        if (!photoAudit) return null;
+        const ackSet = new Set(acknowledged);
+        const unseen = photoAudit.missing.filter((m) => !ackSet.has(m.docNum));
+        if (unseen.length === 0) return null;
+        return (
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 animate-slide-in">
+            <p className="text-sm font-semibold text-text">
+              {unseen.length} recent receipt{unseen.length === 1 ? "" : "s"} missing photos
+            </p>
+            <p className="text-xs text-text-secondary mt-1">
+              These posted to SAP, but their photos never reached SharePoint. If the
+              pictures are still on the phone that took them, add them by hand.
+            </p>
+            <div className="mt-2 flex flex-col gap-1">
+              {unseen.slice(0, 6).map((m) => (
+                <p key={m.docNum} className="text-xs text-text">
+                  <span className="font-medium">GRPO {m.docNum}</span>
+                  {m.docDate ? ` · ${m.docDate}` : ""}
+                  {m.receivedBy ? ` · ${m.receivedBy.split("@")[0]}` : ""}
+                </p>
+              ))}
+              {unseen.length > 6 && (
+                <p className="text-xs text-text-secondary">and {unseen.length - 6} more</p>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                // Acknowledge only what's on screen. A receipt that fails
+                // tomorrow isn't covered by today's dismissal.
+                const next = [...new Set([...acknowledged, ...unseen.map((m) => m.docNum)])];
+                setAcknowledged(next);
+                writeAcknowledged(next);
+              }}
+              className="mt-3 px-4 py-2 rounded-lg bg-surface border border-amber-400
+                         text-text text-sm font-medium active:scale-[0.98] transition-transform"
+            >
+              Got it — don't show these again
+            </button>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* New Session */}
       <button
