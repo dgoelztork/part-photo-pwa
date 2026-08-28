@@ -442,6 +442,36 @@ export async function photoToDataUrl(blob: Blob): Promise<string> {
   return blobToDataUrl(resized);
 }
 
+export interface MissingPhotoReceipt {
+  docNum: number;
+  docEntry: number;
+  docDate: string | null;
+  receivedBy: string | null;
+  poNumbers: number[];
+}
+
+export interface PhotoAuditResult {
+  missing: MissingPhotoReceipt[];
+  checked: number;
+  sinceDate: string;
+}
+
+/**
+ * Receipts filed from this app whose photos never reached SharePoint.
+ *
+ * Read from SAP, not from anything local: the receipts that lose their photos
+ * are exactly the ones whose phone stopped mid-upload, so the device that
+ * failed can never be the one to report it.
+ */
+export async function fetchPhotoAudit(days = 7): Promise<PhotoAuditResult> {
+  const res = await proxyFetch(`/api/photo-audit?days=${days}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: "Photo audit failed" }));
+    throw new Error(err.message ?? `Photo audit failed (${res.status})`);
+  }
+  return res.json();
+}
+
 /** Check if the proxy is reachable. */
 export async function checkProxyHealth(): Promise<boolean> {
   try {

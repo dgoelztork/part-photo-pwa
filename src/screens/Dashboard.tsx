@@ -2,7 +2,7 @@ import { useEffect, useState, type MouseEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/auth-store";
 import { useSessionStore } from "../stores/session-store";
-import { getProxyUrl, setProxyUrl, checkProxyHealth, fetchPrinters, DEFAULT_PROXY_URL } from "../services/api-client";
+import { getProxyUrl, setProxyUrl, checkProxyHealth, fetchPrinters, fetchPhotoAudit, DEFAULT_PROXY_URL, type PhotoAuditResult } from "../services/api-client";
 import { TailscaleHint } from "../components/TailscaleHint";
 import type { ReceivingSession } from "../types/session";
 import { STEP_LABELS } from "../types/session";
@@ -18,10 +18,17 @@ export function Dashboard() {
   // Until then the button would lead to a dead end for a receiver, so hide it.
   const [hasPrinters, setHasPrinters] = useState(false);
 
+  // Receipts whose photos never landed. Silent by nature — the phone that
+  // failed can't report it — so the dashboard asks SAP on every open.
+  const [photoAudit, setPhotoAudit] = useState<PhotoAuditResult | null>(null);
+
   useEffect(() => {
     void fetchPrinters()
       .then((printers) => setHasPrinters(printers.length > 0))
       .catch(() => setHasPrinters(false));
+    void fetchPhotoAudit(7)
+      .then(setPhotoAudit)
+      .catch((err) => console.warn("[Dashboard] Photo audit unavailable:", err));
   }, []);
 
   const handleCheckProxy = async () => {
@@ -84,6 +91,35 @@ export function Dashboard() {
           Sign out
         </button>
       </div>
+
+      {/* Photos that never made it. Deliberately loud and deliberately at the
+          top: this failure hid for two months because nothing surfaced it. */}
+      {photoAudit && photoAudit.missing.length > 0 && (
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 animate-slide-in">
+          <p className="text-sm font-semibold text-text">
+            {photoAudit.missing.length} recent receipt
+            {photoAudit.missing.length === 1 ? "" : "s"} missing photos
+          </p>
+          <p className="text-xs text-text-secondary mt-1">
+            These posted to SAP, but their photos never reached SharePoint. If the
+            pictures are still on the phone that took them, add them by hand.
+          </p>
+          <div className="mt-2 flex flex-col gap-1">
+            {photoAudit.missing.slice(0, 6).map((m) => (
+              <p key={m.docNum} className="text-xs text-text">
+                <span className="font-medium">GRPO {m.docNum}</span>
+                {m.docDate ? ` · ${m.docDate}` : ""}
+                {m.receivedBy ? ` · ${m.receivedBy.split("@")[0]}` : ""}
+              </p>
+            ))}
+            {photoAudit.missing.length > 6 && (
+              <p className="text-xs text-text-secondary">
+                and {photoAudit.missing.length - 6} more
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* New Session */}
       <button
