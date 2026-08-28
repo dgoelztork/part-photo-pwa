@@ -148,7 +148,32 @@ export function PackingSlipStep() {
           </button>
         </div>
 
-        {poData && (
+        {/* A fully received PO used to render here in green saying "0 open lines
+            ready to receive", then hand the receiver an empty line list with
+            nothing to confirm. It reads as success and is a dead end — it cost
+            a receiver a morning on PO 94882, which was already received in
+            full. Say so plainly instead. */}
+        {poData && poData.openLineCount === 0 && (
+          <div className="mt-3 p-3 rounded-lg bg-amber-50 border border-amber-300 animate-slide-in">
+            <p className="font-semibold text-text">{poData.vendorName}</p>
+            <p className="text-sm text-text-secondary">
+              PO {poData.docNum} &middot; {poData.orderDate}
+            </p>
+            <p className="text-sm font-medium text-text mt-2">
+              This PO is already fully received.
+            </p>
+            <p className="text-xs text-text-secondary mt-1">
+              All {poData.totalLines} line{poData.totalLines !== 1 ? "s" : ""} are closed in SAP, so
+              there is nothing left to receive here. If more stock arrived than was ordered, or a
+              line was closed early, purchasing needs to reopen the PO before it can be received.
+            </p>
+            <p className="text-xs text-text-secondary mt-2">
+              Nothing is stuck. You can delete this session from the dashboard.
+            </p>
+          </div>
+        )}
+
+        {poData && poData.openLineCount > 0 && (
           <div className="mt-3 p-3 rounded-lg bg-green-50 border border-green-200 animate-slide-in">
             <p className="font-semibold text-text">{poData.vendorName}</p>
             <p className="text-sm text-text-secondary">
@@ -156,6 +181,8 @@ export function PackingSlipStep() {
             </p>
             <p className="text-sm text-success mt-1">
               {poData.openLineCount} open line{poData.openLineCount !== 1 ? "s" : ""} ready to receive
+              {poData.totalLines > poData.openLineCount &&
+                ` (${poData.totalLines - poData.openLineCount} already closed)`}
             </p>
           </div>
         )}
