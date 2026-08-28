@@ -522,8 +522,12 @@ export async function extractShippingLabel(
   image: Blob
 ): Promise<ShippingLabelExtraction> {
   // Labels carry small print (ZIP codes, weight, service line) — keep more
-  // pixels for vision OCR than we'd use for free-form documents.
-  const resized = await resizeForVision(image, 1800);
+  // pixels for vision OCR than we'd use for free-form documents. 1568 is the
+  // ceiling: claude-haiku-4-5 downsamples anything larger, so sending 1800 was
+  // uploading pixels the model then threw away. (High-resolution vision, 2576px,
+  // exists only on Opus 4.7+ and Sonnet 5 — raising this would need a model
+  // change, not just a bigger number.)
+  const resized = await resizeForVision(image, 1568);
   const dataUrl = await blobToDataUrl(resized);
   const res = await proxyFetch("/api/extract/shipping-label", {
     method: "POST",

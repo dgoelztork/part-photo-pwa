@@ -83,6 +83,9 @@ export function ReviewSubmit() {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [uploadResult, setUploadResult] = useState<ReceivingUploadResult | null>(null);
   const [showPicklist, setShowPicklist] = useState(false);
+  // True while photos are still going up. Gates the buttons so nobody walks
+  // away mid-upload.
+  const [uploading, setUploading] = useState(false);
 
   if (!session) return null;
 
@@ -154,10 +157,9 @@ export function ReviewSubmit() {
         postedDocEntry = result.docEntry;
       }
 
-      // GRPO is in SAP — flip status now so the receiver sees success and
-      // can return to the dashboard. SharePoint upload runs in the
-      // background and stamps U_GRPODocs when done. A SharePoint failure
-      // never undoes the posted GRPO.
+      // GRPO is in SAP — flip status now so the receipt is recorded as done
+      // even if the photo upload below fails. A SharePoint failure never
+      // undoes the posted GRPO.
       setStatus("SUBMITTED");
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Submission failed");
@@ -167,43 +169,51 @@ export function ReviewSubmit() {
 
     setSubmitting(false);
 
-    // Background: upload photo evidence to SharePoint, then patch the GRPO
-    // with the folder URL. Fire-and-forget — the success screen is already
-    // rendered. If the receiver navigates away mid-upload, the in-flight
-    // fetches keep going and the store gets updated when (if) they finish.
-    void (async () => {
-      let uploadOutcome: ReceivingUploadResult | null = null;
+    // Upload the photos with the receiver still on this screen, and don't
+    // offer Done until it finishes.
+    //
+    // This used to be fire-and-forget: the success card rendered immediately
+    // and the upload ran in the background. That reads well but doesn't
+    // survive contact with a phone — a receipt is ~14 photos going to
+    // SharePoint AND Azure Blob, and the moment the screen locks or the app
+    // is switched away, iOS stops the page and the remaining uploads die
+    // silently. GRPO 77197 landed 4 of 14 that way, and 3 of the last 4
+    // receipts lost their photos entirely. The receipt itself is already safe
+    // in SAP by this point; what's at stake is the evidence, which only
+    // exists on the phone until it lands.
+    setUploading(true);
+    let uploadOutcome: ReceivingUploadResult | null = null;
+    try {
+      uploadOutcome = await uploadReceivingSessionToSharePoint(session, setUploadProgress);
+      setUploadResult(uploadOutcome);
+    } catch (err) {
+      setUploadResult({
+        uploaded: 0,
+        webImagesUploaded: 0,
+        failed: [{
+          filename: "(upload aborted)",
+          error: err instanceof Error ? err.message : String(err),
+          destination: "receiving",
+        }],
+        folder: "",
+      });
+    } finally {
+      setUploadProgress(null);
+      setUploading(false);
+    }
+
+    if (postedDocEntry !== null && uploadOutcome?.folderUrl && uploadOutcome.uploaded > 0) {
       try {
-        uploadOutcome = await uploadReceivingSessionToSharePoint(session, setUploadProgress);
-        setUploadResult(uploadOutcome);
+        await patchGrpoDocsUrl(postedDocEntry, uploadOutcome.folderUrl);
       } catch (err) {
-        setUploadResult({
-          uploaded: 0,
-          webImagesUploaded: 0,
-          failed: [{
-            filename: "(upload aborted)",
-            error: err instanceof Error ? err.message : String(err),
-            destination: "receiving",
-          }],
-          folder: "",
-        });
-      } finally {
-        setUploadProgress(null);
+        console.warn("[ReviewSubmit] Failed to stamp U_GRPODocs:", err);
       }
+    }
 
-      if (postedDocEntry !== null && uploadOutcome?.folderUrl && uploadOutcome.uploaded > 0) {
-        try {
-          await patchGrpoDocsUrl(postedDocEntry, uploadOutcome.folderUrl);
-        } catch (err) {
-          console.warn("[ReviewSubmit] Failed to stamp U_GRPODocs:", err);
-        }
-      }
-
-      if (!poDocEntry) {
-        // No SAP posting — just mark done after upload attempt
-        navigate("/");
-      }
-    })();
+    if (!poDocEntry) {
+      // No SAP posting — just mark done after the upload attempt
+      navigate("/");
+    }
   };
 
   return (
@@ -346,9 +356,24 @@ export function ReviewSubmit() {
           <p className="text-lg font-bold text-success">GRPO Posted</p>
           <p className="text-sm text-text-secondary">Document #{grpoDocNum}</p>
           {uploadProgress && (
-            <p className="text-xs text-text-secondary mt-2 truncate">
-              Uploading photos in background ({uploadProgress.current}/{uploadProgress.total})…
-            </p>
+            <div className="mt-3">
+              <p className="text-sm font-medium text-text">
+                Uploading photos {uploadProgress.current} of {uploadProgress.total}
+              </p>
+              <div className="h-2 rounded-full bg-green-100 overflow-hidden mt-1">
+                <div
+                  className="h-full bg-success transition-all duration-300"
+                  style={{
+                    width: `${Math.round((uploadProgress.current / Math.max(1, uploadProgress.total)) * 100)}%`,
+                  }}
+                />
+              </div>
+              {/* The phone stops the page when it locks or is switched away,
+                  which is exactly how photos have gone missing. */}
+              <p className="text-xs text-error mt-2 font-medium">
+                Keep this screen open until it finishes.
+              </p>
+            </div>
           )}
           {!uploadProgress && uploadResult && (() => {
             // Receiving-folder failures matter to the receiver; web-images are a
@@ -370,25 +395,30 @@ export function ReviewSubmit() {
           })()}
           {/* Most of what we receive is already committed to a customer order.
               Offer the pick sheet here, while the parts are still on the bench. */}
-          <div className="mt-3 pt-3 border-t border-green-200">
-            <p className="text-sm text-text mb-2">Print picklist for this order?</p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowPicklist(true)}
-                className="flex-1 px-4 py-2 rounded-lg bg-surface border border-primary
-                           text-primary font-medium active:scale-[0.98] transition-transform"
-              >
-                Print Picklist
-              </button>
-              <button
-                onClick={() => navigate("/")}
-                className="flex-1 px-4 py-2 rounded-lg bg-primary text-white font-medium
-                           active:scale-[0.98] transition-transform"
-              >
-                Done
-              </button>
+          {/* Hidden until the photos are safely up — printing opens a system
+              sheet and Done leaves the screen, both of which used to strand
+              the upload half-finished. */}
+          {!uploading && (
+            <div className="mt-3 pt-3 border-t border-green-200">
+              <p className="text-sm text-text mb-2">Print picklist for this order?</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowPicklist(true)}
+                  className="flex-1 px-4 py-2 rounded-lg bg-surface border border-primary
+                             text-primary font-medium active:scale-[0.98] transition-transform"
+                >
+                  Print Picklist
+                </button>
+                <button
+                  onClick={() => navigate("/")}
+                  className="flex-1 px-4 py-2 rounded-lg bg-primary text-white font-medium
+                             active:scale-[0.98] transition-transform"
+                >
+                  Done
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 

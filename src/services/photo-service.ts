@@ -38,12 +38,75 @@ export function captureDocument(): Promise<File | null> {
   });
 }
 
-/** Create a CapturedPhoto from a File. */
-export function processCapture(file: File): CapturedPhoto {
+/**
+ * Longest edge kept for stored photos.
+ *
+ * Phones hand us 4080x3060 (12.5 megapixels, 3-9 MB each). Nothing downstream
+ * can use that: Claude caps image input at 1568px on the model this app uses,
+ * a screen shows far less, and a receipt of 14 photos was moving ~120 MB off
+ * the phone (every file goes to SharePoint AND Azure Blob). That upload runs
+ * after the receiver is told "Submitted", so it routinely died with the page —
+ * GRPO 77197 landed 4 of 14 photos, and 3 of the last 4 receipts lost theirs.
+ *
+ * 2560px keeps ~5 megapixels: more than any current Claude model reads, plenty
+ * to zoom into a nameplate, and about a quarter of the bytes.
+ */
+const MAX_STORED_DIM = 2560;
+const STORED_QUALITY = 0.85;
+
+/**
+ * Shrink a captured image for storage. Best-effort: anything that can't be
+ * decoded (an odd HEIC, a PDF that arrived here by mistake) is passed through
+ * untouched, because a large photo is far better than a lost one.
+ */
+export async function downscaleForStorage(file: File): Promise<Blob> {
+  if (!file.type.startsWith("image/")) return file;
+  try {
+    // "from-image" applies the EXIF orientation tag. Phone cameras record
+    // rotation there rather than rotating the pixels, and a canvas redraw that
+    // ignores it silently stores every portrait photo on its side.
+    const img = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const srcW = img.width;
+    const srcH = img.height;
+    const scale = Math.min(1, MAX_STORED_DIM / Math.max(srcW, srcH));
+    // Already small enough — don't re-encode, that only loses quality.
+    if (scale >= 1) {
+      img.close?.();
+      return file;
+    }
+    const w = Math.round(srcW * scale);
+    const h = Math.round(srcH * scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(img, 0, 0, w, h);
+    img.close?.();
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", STORED_QUALITY)
+    );
+    // Guard against a resize that somehow got bigger.
+    if (!blob || blob.size >= file.size) return file;
+    // Dimensions captured before close() — a closed ImageBitmap reports 0x0.
+    console.log(
+      `[photo] ${srcW}x${srcH} ${(file.size / 1048576).toFixed(1)}MB -> ` +
+        `${w}x${h} ${(blob.size / 1048576).toFixed(1)}MB`
+    );
+    return blob;
+  } catch (err) {
+    console.warn("[photo] Could not downscale; keeping the original:", err);
+    return file;
+  }
+}
+
+/** Create a CapturedPhoto from a File, shrunk for storage. */
+export async function processCapture(file: File): Promise<CapturedPhoto> {
+  const blob = await downscaleForStorage(file);
   return {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-    blob: file,
-    thumbnailUrl: URL.createObjectURL(file),
+    blob,
+    thumbnailUrl: URL.createObjectURL(blob),
     timestamp: new Date().toISOString(),
   };
 }

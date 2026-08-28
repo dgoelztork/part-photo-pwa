@@ -14,7 +14,7 @@ export function CameraCapture({
   const handleCapture = useCallback(async () => {
     const file = await capturePhoto();
     if (file) {
-      const photo = processCapture(file);
+      const photo = await processCapture(file);
       onCapture(photo);
     }
   }, [onCapture]);
