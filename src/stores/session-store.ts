@@ -25,6 +25,11 @@ interface SessionStore {
 
   // Navigation
   setStatus: (status: SessionStatus) => void;
+  /** Record the posted GRPO so a later retry can stamp U_GRPODocs. */
+  setGrpoResult: (docEntry: number, docNum: number) => void;
+  /** Record whether the photos reached SharePoint. Gates the retry prompt and
+   *  whether the phone keeps carrying the photo bytes. */
+  setPhotosUploaded: (uploaded: boolean) => void;
   goToStep: (step: SessionStatus) => void;
 
   // BOX step (per-box shipping labels and per-box damage)
@@ -189,6 +194,23 @@ export const useSessionStore = create<SessionStore>()(
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, () => ({
             status,
+          })),
+        }));
+      },
+
+      setGrpoResult: (docEntry: number, docNum: number) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, () => ({
+            grpoDocEntry: docEntry,
+            grpoDocNum: docNum,
+          })),
+        }));
+      },
+
+      setPhotosUploaded: (uploaded: boolean) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, state.activeSessionId, () => ({
+            photosUploaded: uploaded,
           })),
         }));
       },
@@ -606,16 +628,16 @@ export const useSessionStore = create<SessionStore>()(
             // device that already struggles for memory.
             boxes: s.boxes.map((b) => ({
               ...b,
-              labelPhotos: b.labelPhotos.map(keeper(s.status)),
-              damagePhotos: b.damagePhotos.map(keeper(s.status)),
+              labelPhotos: b.labelPhotos.map(keeper(s)),
+              damagePhotos: b.damagePhotos.map(keeper(s)),
             })),
-            packingSlipPhotos: s.packingSlipPhotos.map(keeper(s.status)),
-            documents: s.documents.map((d) => ({ ...d, photo: keeper(s.status)(d.photo) })),
+            packingSlipPhotos: s.packingSlipPhotos.map(keeper(s)),
+            documents: s.documents.map((d) => ({ ...d, photo: keeper(s)(d.photo) })),
             lineItems: s.lineItems.map((l) => ({
               ...l,
-              photos: l.photos.map(keeper(s.status)),
-              nameplatePhotos: l.nameplatePhotos.map(keeper(s.status)),
-              quantityPhotos: l.quantityPhotos.map(keeper(s.status)),
+              photos: l.photos.map(keeper(s)),
+              nameplatePhotos: l.nameplatePhotos.map(keeper(s)),
+              quantityPhotos: l.quantityPhotos.map(keeper(s)),
             })),
           })),
         } as unknown as SessionStore;
@@ -635,12 +657,18 @@ function withoutBlob(photo: CapturedPhoto): CapturedPhoto {
 }
 
 /**
- * Keep the photo bytes while a receipt is still in progress, discard them once
- * it has been submitted. In-progress is where a reload actually costs
- * something; submitted photos are already in SharePoint.
+ * Keep the photo bytes unless we know they are safely in SharePoint.
+ *
+ * Dropping them at SUBMITTED alone was too eager: a receipt whose upload died
+ * partway is exactly the one still holding the only copy, and it is the one
+ * that needs to retry. So the bytes go only when `photosUploaded` is true.
+ * Everything else — in progress, or submitted with photos unaccounted for —
+ * keeps them.
  */
-function keeper(status: SessionStatus): (photo: CapturedPhoto) => CapturedPhoto {
-  return status === "SUBMITTED" ? withoutBlob : forStorage;
+function keeper(session: ReceivingSession): (photo: CapturedPhoto) => CapturedPhoto {
+  return session.status === "SUBMITTED" && session.photosUploaded === true
+    ? withoutBlob
+    : forStorage;
 }
 
 /**

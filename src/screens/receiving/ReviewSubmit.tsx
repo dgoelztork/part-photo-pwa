@@ -72,10 +72,31 @@ function buildGrpoDetails(session: ReceivingSession): string {
   return sections.join("\n");
 }
 
+/**
+ * Does this session still hold the photo bytes?
+ *
+ * Receipts submitted before photos were persisted come back with empty blobs,
+ * and so do ones whose upload is confirmed done. Offering "upload the photos"
+ * when there is nothing left to send would be a button that can only fail.
+ */
+function hasPhotoBytes(session: ReceivingSession): boolean {
+  const any = (photos: { blob: Blob }[]) => photos.some((p) => p.blob && p.blob.size > 0);
+  return (
+    session.boxes.some((b) => any(b.labelPhotos) || any(b.damagePhotos)) ||
+    any(session.packingSlipPhotos) ||
+    session.documents.some((d) => d.photo.blob && d.photo.blob.size > 0) ||
+    session.lineItems.some(
+      (l) => any(l.photos) || any(l.nameplatePhotos) || any(l.quantityPhotos)
+    )
+  );
+}
+
 export function ReviewSubmit() {
   const session = useSessionStore((s) => s.getActiveSession());
   const goToStep = useSessionStore((s) => s.goToStep);
   const setStatus = useSessionStore((s) => s.setStatus);
+  const setGrpoResult = useSessionStore((s) => s.setGrpoResult);
+  const setPhotosUploaded = useSessionStore((s) => s.setPhotosUploaded);
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -110,6 +131,52 @@ export function ReviewSubmit() {
     acc[l.itemCode] = (acc[l.itemCode] ?? 0) + l.receivedQty;
     return acc;
   }, {});
+
+  /**
+   * Send the photos and stamp the folder URL on the GRPO. Shared by the first
+   * attempt and the retry, so a retried upload behaves identically.
+   *
+   * Records whether it worked on the session itself: that flag is what shows
+   * the retry prompt, and what tells the store it can stop carrying the photo
+   * bytes on the phone.
+   */
+  const runUpload = async (docEntry: number | null) => {
+    setUploading(true);
+    let outcome: ReceivingUploadResult | null = null;
+    try {
+      outcome = await uploadReceivingSessionToSharePoint(session, setUploadProgress);
+      setUploadResult(outcome);
+    } catch (err) {
+      setUploadResult({
+        uploaded: 0,
+        webImagesUploaded: 0,
+        failed: [{
+          filename: "(upload aborted)",
+          error: err instanceof Error ? err.message : String(err),
+          destination: "receiving",
+        }],
+        folder: "",
+      });
+    } finally {
+      setUploadProgress(null);
+      setUploading(false);
+    }
+
+    if (docEntry !== null && outcome?.folderUrl && outcome.uploaded > 0) {
+      try {
+        await patchGrpoDocsUrl(docEntry, outcome.folderUrl);
+      } catch (err) {
+        console.warn("[ReviewSubmit] Failed to stamp U_GRPODocs:", err);
+      }
+    }
+
+    // Only a clean run counts. A partial upload leaves the phone holding the
+    // only copy of what didn't make it.
+    const clean =
+      !!outcome && outcome.uploaded > 0 &&
+      outcome.failed.filter((f) => f.destination === "receiving").length === 0;
+    setPhotosUploaded(clean);
+  };
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -155,6 +222,8 @@ export function ReviewSubmit() {
 
         setGrpoDocNum(result.docNum);
         postedDocEntry = result.docEntry;
+        // Persisted so a retry after a reload can still stamp U_GRPODocs.
+        setGrpoResult(result.docEntry, result.docNum);
       }
 
       // GRPO is in SAP — flip status now so the receipt is recorded as done
@@ -181,34 +250,7 @@ export function ReviewSubmit() {
     // receipts lost their photos entirely. The receipt itself is already safe
     // in SAP by this point; what's at stake is the evidence, which only
     // exists on the phone until it lands.
-    setUploading(true);
-    let uploadOutcome: ReceivingUploadResult | null = null;
-    try {
-      uploadOutcome = await uploadReceivingSessionToSharePoint(session, setUploadProgress);
-      setUploadResult(uploadOutcome);
-    } catch (err) {
-      setUploadResult({
-        uploaded: 0,
-        webImagesUploaded: 0,
-        failed: [{
-          filename: "(upload aborted)",
-          error: err instanceof Error ? err.message : String(err),
-          destination: "receiving",
-        }],
-        folder: "",
-      });
-    } finally {
-      setUploadProgress(null);
-      setUploading(false);
-    }
-
-    if (postedDocEntry !== null && uploadOutcome?.folderUrl && uploadOutcome.uploaded > 0) {
-      try {
-        await patchGrpoDocsUrl(postedDocEntry, uploadOutcome.folderUrl);
-      } catch (err) {
-        console.warn("[ReviewSubmit] Failed to stamp U_GRPODocs:", err);
-      }
-    }
+    await runUpload(postedDocEntry);
 
     if (!poDocEntry) {
       // No SAP posting — just mark done after the upload attempt
@@ -447,6 +489,50 @@ export function ReviewSubmit() {
               No SAP PO linked — session will be saved locally only
             </p>
           )}
+        </div>
+      )}
+
+      {/* A receipt whose photos never landed. Shown when the session still has
+          the bytes — which is the case precisely when they didn't make it, since
+          the store only stops carrying them once an upload is confirmed clean. */}
+      {isSubmitted && session.photosUploaded !== true && !uploading && hasPhotoBytes(session) && (
+        <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 animate-slide-in">
+          <p className="text-sm font-semibold text-text">Photos didn't finish uploading</p>
+          <p className="text-xs text-text-secondary mt-1">
+            The receipt is safely in SAP
+            {session.grpoDocNum ? ` as GRPO ${session.grpoDocNum}` : ""}, but its photos never
+            reached SharePoint. They're still on this phone — send them now.
+          </p>
+          <button
+            onClick={() => void runUpload(session.grpoDocEntry ?? null)}
+            className="mt-3 w-full py-3 rounded-xl bg-primary text-white font-semibold
+                       active:scale-[0.98] transition-transform"
+          >
+            Upload the photos
+          </button>
+          <p className="text-xs text-text-secondary mt-2">
+            Keep this screen open until it finishes.
+          </p>
+        </div>
+      )}
+
+      {/* Progress for a retry, which happens outside the submit flow. */}
+      {isSubmitted && uploading && uploadProgress && (
+        <div className="p-4 rounded-xl bg-green-50 border border-green-200">
+          <p className="text-sm font-medium text-text">
+            Uploading photos {uploadProgress.current} of {uploadProgress.total}
+          </p>
+          <div className="h-2 rounded-full bg-green-100 overflow-hidden mt-1">
+            <div
+              className="h-full bg-success transition-all duration-300"
+              style={{
+                width: `${Math.round((uploadProgress.current / Math.max(1, uploadProgress.total)) * 100)}%`,
+              }}
+            />
+          </div>
+          <p className="text-xs text-error mt-2 font-medium">
+            Keep this screen open until it finishes.
+          </p>
         </div>
       )}
 

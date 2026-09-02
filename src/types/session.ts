@@ -142,6 +142,19 @@ export interface ReceivingSession {
 
   // Submission
   submittedAt?: string;
+  /** GRPO the receipt posted as. Kept so a failed photo upload can be retried
+   *  after a reload — stamping U_GRPODocs needs the DocEntry. */
+  grpoDocEntry?: number;
+  grpoDocNum?: number;
+  /**
+   * Whether the photos actually reached SharePoint. Undefined on older
+   * sessions and on any receipt whose upload never reported back.
+   *
+   * Drives two things: the retry prompt, and whether the store keeps the photo
+   * bytes on the phone. A receipt whose photos landed doesn't need to carry
+   * them; one whose photos didn't is the only copy left.
+   */
+  photosUploaded?: boolean;
 }
 
 export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
