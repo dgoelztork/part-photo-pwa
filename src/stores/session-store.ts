@@ -112,14 +112,31 @@ function createEmptySession(userName: string): ReceivingSession {
   };
 }
 
-// Custom IndexedDB storage adapter for Zustand persist
+/**
+ * IndexedDB storage for Zustand persist — structured clone, not JSON.
+ *
+ * This used to JSON.stringify the state before storing, which is why photos
+ * could never survive a reload: JSON turns a Blob into `{}`, so the store
+ * deliberately stripped them on the way out and resumed sessions came back
+ * with empty galleries.
+ *
+ * That turned a recoverable hiccup into a lost receipt. When the app reloads
+ * mid-session — which it does; iOS reclaims memory and Safari discards
+ * background tabs — every photo taken so far was gone, and the receiver was
+ * left with a half-finished session they could not complete. GRPO 77267 lost
+ * its photos exactly this way, days after the upload timing was fixed.
+ *
+ * IndexedDB stores Blobs natively through the structured clone algorithm, so
+ * handing it the object directly keeps them. The catch: structured clone
+ * THROWS on functions, where JSON silently dropped them — hence `partialize`
+ * below must return only the data fields, never the store's actions.
+ */
 const idbStorage = {
   getItem: async (name: string): Promise<StorageValue<SessionStore> | null> => {
-    const value = await get<string>(name);
-    return value ? JSON.parse(value) : null;
+    return (await get<StorageValue<SessionStore>>(name)) ?? null;
   },
   setItem: async (name: string, value: StorageValue<SessionStore>): Promise<void> => {
-    await set(name, JSON.stringify(value));
+    await set(name, value);
   },
   removeItem: async (name: string): Promise<void> => {
     await del(name);
@@ -458,6 +475,12 @@ export const useSessionStore = create<SessionStore>()(
     {
       name: "receiving-sessions",
       storage: idbStorage,
+      // Object URLs die with the page that created them, so every restored
+      // photo needs a fresh one before the galleries can show anything.
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        state.sessions = state.sessions.map(rehydrateSessionPhotos);
+      },
       // v1 added per-line nameplatePhotos and quantityPhotos.
       // v2 added per-line boxCount (later moved to the shipment level).
       // v3 introduced session.shipmentBoxCount and abandoned per-line boxCount.
@@ -565,35 +588,93 @@ export const useSessionStore = create<SessionStore>()(
         return state as unknown as SessionStore;
       },
       partialize: (state) => {
-        // Strip blob data from photos for persistence (blobs can't be serialized)
-        // Photos will need to be re-captured if the session is resumed after app close
-        const stripped = {
-          ...state,
+        // ONLY the data fields. Structured clone rejects functions, so
+        // spreading the whole store (which is mostly actions) would throw and
+        // silently stop persisting anything.
+        //
+        // Photos are kept, blobs and all — that is the point. The one thing
+        // dropped is `thumbnailUrl`: an object URL is only valid for the page
+        // that made it and is meaningless after a reload. It is rebuilt from
+        // the blob on rehydrate.
+        return {
+          activeSessionId: state.activeSessionId,
           sessions: state.sessions.map((s) => ({
             ...s,
+            // Once submitted the photos are in SharePoint (or the photo audit
+            // has flagged that they aren't), so the phone stops carrying them.
+            // Roughly 10MB a receipt would otherwise pile up forever on a
+            // device that already struggles for memory.
             boxes: s.boxes.map((b) => ({
               ...b,
-              labelPhotos: b.labelPhotos.map(stripBlob),
-              damagePhotos: b.damagePhotos.map(stripBlob),
+              labelPhotos: b.labelPhotos.map(keeper(s.status)),
+              damagePhotos: b.damagePhotos.map(keeper(s.status)),
             })),
-            packingSlipPhotos: s.packingSlipPhotos.map(stripBlob),
-            documents: s.documents.map((d) => ({ ...d, photo: stripBlob(d.photo) })),
+            packingSlipPhotos: s.packingSlipPhotos.map(keeper(s.status)),
+            documents: s.documents.map((d) => ({ ...d, photo: keeper(s.status)(d.photo) })),
             lineItems: s.lineItems.map((l) => ({
               ...l,
-              photos: l.photos.map(stripBlob),
-              nameplatePhotos: l.nameplatePhotos.map(stripBlob),
-              quantityPhotos: l.quantityPhotos.map(stripBlob),
+              photos: l.photos.map(keeper(s.status)),
+              nameplatePhotos: l.nameplatePhotos.map(keeper(s.status)),
+              quantityPhotos: l.quantityPhotos.map(keeper(s.status)),
             })),
           })),
-        };
-        return stripped as unknown as SessionStore;
+        } as unknown as SessionStore;
       },
     }
   )
 );
 
-function stripBlob(photo: CapturedPhoto): CapturedPhoto {
+/** Drop the object URL before storing; it cannot outlive the page that made it. */
+function forStorage(photo: CapturedPhoto): CapturedPhoto {
+  return { ...photo, thumbnailUrl: "" };
+}
+
+/** Drop the bytes too — for sessions whose photos have already been sent. */
+function withoutBlob(photo: CapturedPhoto): CapturedPhoto {
   return { ...photo, blob: new Blob(), thumbnailUrl: "" };
+}
+
+/**
+ * Keep the photo bytes while a receipt is still in progress, discard them once
+ * it has been submitted. In-progress is where a reload actually costs
+ * something; submitted photos are already in SharePoint.
+ */
+function keeper(status: SessionStatus): (photo: CapturedPhoto) => CapturedPhoto {
+  return status === "SUBMITTED" ? withoutBlob : forStorage;
+}
+
+/**
+ * Rebuild the preview URL for a photo restored from storage. A blob with no
+ * bytes means it was saved by an older version that stripped them — leave it
+ * empty so the gallery shows nothing rather than a broken image.
+ */
+function rehydratePhoto(photo: CapturedPhoto): CapturedPhoto {
+  if (photo.thumbnailUrl || !photo.blob || photo.blob.size === 0) return photo;
+  try {
+    return { ...photo, thumbnailUrl: URL.createObjectURL(photo.blob) };
+  } catch {
+    return photo;
+  }
+}
+
+/** Restore every preview URL in a session after a reload. */
+export function rehydrateSessionPhotos(s: ReceivingSession): ReceivingSession {
+  return {
+    ...s,
+    boxes: s.boxes.map((b) => ({
+      ...b,
+      labelPhotos: b.labelPhotos.map(rehydratePhoto),
+      damagePhotos: b.damagePhotos.map(rehydratePhoto),
+    })),
+    packingSlipPhotos: s.packingSlipPhotos.map(rehydratePhoto),
+    documents: s.documents.map((d) => ({ ...d, photo: rehydratePhoto(d.photo) })),
+    lineItems: s.lineItems.map((l) => ({
+      ...l,
+      photos: l.photos.map(rehydratePhoto),
+      nameplatePhotos: l.nameplatePhotos.map(rehydratePhoto),
+      quantityPhotos: l.quantityPhotos.map(rehydratePhoto),
+    })),
+  };
 }
 
 // Suppress unused import warnings — these are used by the store's type signature

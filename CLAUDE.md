@@ -169,7 +169,11 @@ tailscale serve --bg --https=443 http://localhost:5173
 ```
 
 ## Conventions
-- The PWA persists session state to IndexedDB. Photos can't survive a serialize/deserialize cycle (blob → empty Blob in `stripBlob`), so resumed sessions show empty galleries — this is intentional.
+- The PWA persists session state to IndexedDB **including the photo blobs**, so a reload no longer loses work. The storage adapter hands the object to IndexedDB directly; it used to `JSON.stringify` first, which turned every Blob into `{}` and was the real reason photos "couldn't be serialized". IndexedDB stores Blobs natively via structured clone.
+- **`partialize` must return only `sessions` and `activeSessionId`.** Structured clone throws `DataCloneError` on functions, where JSON silently dropped them — spreading the whole store (mostly actions) would stop persistence dead.
+- `thumbnailUrl` is dropped on the way out and rebuilt in `onRehydrateStorage`: an object URL only works for the page that created it.
+- Photo bytes are pruned once a session is `SUBMITTED` (`keeper()` in the store) — by then they're in SharePoint, or the photo audit has flagged that they aren't. Keeping ~10MB per receipt forever on a phone that already struggles for memory would trade one problem for another. The consequence: a submitted session can't retry its upload after a reload.
+- Why it matters: the app does reload mid-receipt. Azure AD issues SPA refresh tokens lasting ~24h, and Safari discards background tabs, so an interactive re-auth lands mid-session roughly daily. GRPO 77267 lost its photos that way on 2026-08-31, days after the upload timing was fixed.
 - Zustand actions live alongside state; never mutate state directly outside the store.
 - Use the typed `ReceivingSession` shape in `src/types/session.ts` as the source of truth — backend returns are mapped to it in `api-client.ts` and `session-store.ts:applyPoLookup`.
 - All proxy calls go through `proxyFetch` in `api-client.ts` (handles auth + 401 retry). Don't `fetch` the proxy directly.
