@@ -293,12 +293,16 @@ export interface LabelSalesOrder {
 export interface PrintLabelInput {
   itemCode: string;
   itemDescription: string;
-  orderedQty?: number | null;
   soNumber?: number | string | null;
-  customerName?: string | null;
-  customerPartNo?: string | null;
-  warehouse?: string | null;
+  /** Customer PO from the order header. Printed as text and as the barcode. */
+  customerPO?: string | null;
+  /** The customer's own line reference, printed after "Line:". */
+  customerLineNo?: string | null;
+  /** Vessel / job number, printed under "Cust Part:". */
+  vesselJob?: string | null;
   copies: number;
+  /** Not on the label, but decides which site's printer receives it. */
+  warehouse?: string | null;
   printerId?: string;
 }
 

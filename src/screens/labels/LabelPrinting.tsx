@@ -218,12 +218,13 @@ function PrintPanel({
       const result = await printItemLabels({
         itemCode: line.itemCode,
         itemDescription: line.itemDescription,
-        orderedQty: line.orderedQty,
         soNumber: order.soNumber,
-        customerName: order.customerName,
-        customerPartNo: line.customerPartNo || null,
-        warehouse: line.warehouse || null,
+        // The barcode. Comes from the order header, not the line.
+        customerPO: order.customerPO || null,
+        customerLineNo: line.customerLineNo || null,
+        vesselJob: order.vesselJob || null,
         copies: copiesNum,
+        warehouse: line.warehouse || null,
         printerId: printerId || undefined,
       });
       setStatus("sent");

@@ -102,14 +102,29 @@ router.get("/sales-order/:soNumber", async (req, res) => {
 interface PrintBody {
   itemCode?: string;
   itemDescription?: string;
-  orderedQty?: number | null;
   soNumber?: number | string | null;
-  customerName?: string | null;
-  customerPartNo?: string | null;
-  warehouse?: string | null;
+  /** Customer PO from the order header: the barcode, and the "PO:" text. */
+  customerPO?: string | null;
+  /** The customer's own line reference, printed after "Line:". */
+  customerLineNo?: string | null;
+  /** Vessel / job number, printed under "Cust Part:". */
+  vesselJob?: string | null;
   copies?: number;
+  /**
+   * Not printed on the label, but still needed here: the warehouse is how a
+   * line is routed to its site's printer when no printer is named.
+   */
+  warehouse?: string | null;
   /** Explicit printer choice; otherwise routed by warehouse. */
   printerId?: string;
+  /**
+   * Accepted and ignored. The label carries no quantity, no customer name and
+   * no customer part number, so these are dropped rather than passed on. Kept
+   * in the shape so an older client sending them is not rejected.
+   */
+  orderedQty?: number | null;
+  customerName?: string | null;
+  customerPartNo?: string | null;
 }
 
 /** Shared by /print and /preview so a preview shows exactly what would print. */
@@ -118,11 +133,10 @@ function buildFromBody(body: PrintBody) {
   const zpl = buildItemLabel({
     itemCode: String(body.itemCode ?? ""),
     itemDescription: String(body.itemDescription ?? ""),
-    orderedQty: body.orderedQty ?? null,
     soNumber: body.soNumber ?? null,
-    customerName: body.customerName ?? null,
-    customerPartNo: body.customerPartNo ?? null,
-    warehouse: body.warehouse ?? null,
+    customerPO: body.customerPO ?? null,
+    customerLineNo: body.customerLineNo ?? null,
+    vesselJob: body.vesselJob ?? null,
     copies,
   });
   return { zpl, copies };

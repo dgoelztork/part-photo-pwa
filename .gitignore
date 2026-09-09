@@ -31,3 +31,8 @@ proxy/certs/
 
 tsconfig.tsbuildinfo
 proxy/data/
+
+# Regenerable output of proxy/tools/logo-to-zpl.ps1. The bitmap that matters
+# lives in LOGO_ZPL in proxy/src/services/zpl.ts; these are working files.
+proxy/tools/logo.gfa.txt
+proxy/tools/logo-preview.png
