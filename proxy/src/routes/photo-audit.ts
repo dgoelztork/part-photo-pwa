@@ -27,10 +27,18 @@ router.get("/", async (req, res) => {
     if (result.missing.length > 0) {
       // Logged loudly as well as returned: this is the failure that hid for
       // two months, and a log line is one more place it can be noticed.
+      // The PO number is included because the receipt number alone is a dead
+      // end: photos are filed under the PO, so chasing one of these meant
+      // translating GRPO to PO by hand before you could look anything up.
       console.warn(
         `[PhotoAudit] ${result.missing.length} of ${result.checked} app receipts ` +
           `since ${result.sinceDate} have no photos: ` +
-          result.missing.map((m) => `${m.docNum}(${m.receivedBy ?? "?"})`).join(", ")
+          result.missing
+            .map((m) => {
+              const po = m.poNumbers.length ? ` PO ${m.poNumbers.join("/")}` : "";
+              return `GRPO ${m.docNum}${po} (${m.receivedBy ?? "?"})`;
+            })
+            .join(", ")
       );
     } else {
       console.log(

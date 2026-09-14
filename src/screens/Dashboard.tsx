@@ -157,6 +157,10 @@ export function Dashboard() {
               {unseen.slice(0, 6).map((m) => (
                 <p key={m.docNum} className="text-xs text-text">
                   <span className="font-medium">GRPO {m.docNum}</span>
+                  {/* The PO matters more than the receipt number here: photos
+                      are filed under the PO, so it is what you search for to
+                      add them by hand. */}
+                  {m.poNumbers?.length ? ` · PO ${m.poNumbers.join("/")}` : ""}
                   {m.docDate ? ` · ${m.docDate}` : ""}
                   {m.receivedBy ? ` · ${m.receivedBy.split("@")[0]}` : ""}
                 </p>

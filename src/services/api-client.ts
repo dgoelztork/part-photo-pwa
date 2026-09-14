@@ -451,7 +451,10 @@ export interface MissingPhotoReceipt {
   docEntry: number;
   docDate: string | null;
   receivedBy: string | null;
+  /** PO numbers as people say them — what photos are filed under. */
   poNumbers: number[];
+  /** The internal DocEntry values behind them, for tracing in SAP. */
+  poDocEntries: number[];
 }
 
 export interface PhotoAuditResult {

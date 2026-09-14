@@ -22,8 +22,18 @@ export interface MissingPhotoReceipt {
   docDate: string | null;
   /** Receiver the app stamped into U_GRPOdetails. */
   receivedBy: string | null;
-  /** PO numbers the receipt was raised against, for context. */
+  /**
+   * PO numbers the receipt was raised against — the DocNum a person says out
+   * loud and the key `file_cards.doc_reference` stores, NOT the DocEntry.
+   *
+   * A receipt line carries the PO's DocEntry, which is an internal key and a
+   * different number entirely. Reporting that here made this alert impossible
+   * to follow up: you could not look the receipt's photos up by it, and a
+   * DocEntry read as a PO number silently points at the wrong order.
+   */
   poNumbers: number[];
+  /** The raw DocEntry values behind those numbers, for tracing in SAP. */
+  poDocEntries: number[];
 }
 
 export interface PhotoAuditResult {
@@ -81,7 +91,8 @@ export async function auditRecentPhotos(days = 7): Promise<PhotoAuditResult> {
         docEntry: doc.DocEntry,
         docDate: doc.DocDate ? String(doc.DocDate).slice(0, 10) : null,
         receivedBy: RECEIVER_RE.exec(details)?.[1] ?? null,
-        poNumbers: [
+        poNumbers: [],
+        poDocEntries: [
           ...new Set(
             (doc.DocumentLines ?? [])
               .map((l: Record<string, any>) => l.BaseEntry)
@@ -94,5 +105,42 @@ export async function auditRecentPhotos(days = 7): Promise<PhotoAuditResult> {
     if (rows.length < PAGE) break;
   }
 
+  await fillPoNumbers(missing);
+
   return { missing, checked, sinceDate: since };
+}
+
+/**
+ * Turn each receipt's PO DocEntry values into the PO numbers people use.
+ *
+ * Only the receipts that are actually missing photos are resolved, which is
+ * normally a handful, so this is one extra request rather than a second walk.
+ * A failure here leaves poNumbers empty rather than throwing: an alert with no
+ * PO number is still worth sending, and losing the whole audit to a lookup is
+ * a worse trade than losing one field of it.
+ */
+async function fillPoNumbers(missing: MissingPhotoReceipt[]): Promise<void> {
+  const entries = [...new Set(missing.flatMap((m) => m.poDocEntries))];
+  if (entries.length === 0) return;
+
+  const byEntry = new Map<number, number>();
+  const CHUNK = 20;
+  try {
+    for (let i = 0; i < entries.length; i += CHUNK) {
+      const filter = entries.slice(i, i + CHUNK).map((e) => `DocEntry eq ${e}`).join(" or ");
+      const res = await slFetch(`/PurchaseOrders?$select=DocEntry,DocNum&$filter=${filter}`);
+      if (!res.ok) return;
+      for (const po of ((await res.json()) as Record<string, any>).value ?? []) {
+        if (typeof po.DocEntry === "number" && typeof po.DocNum === "number") {
+          byEntry.set(po.DocEntry, po.DocNum);
+        }
+      }
+    }
+  } catch {
+    return;
+  }
+
+  for (const m of missing) {
+    m.poNumbers = m.poDocEntries.map((e) => byEntry.get(e)).filter((n): n is number => typeof n === "number");
+  }
 }
