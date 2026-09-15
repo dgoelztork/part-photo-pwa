@@ -39,15 +39,17 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Source,
 
-    # Defaults are the logo box on the current 2x3 label (3in wide, 609 dots):
-    # clear of the left margin at 20 and the right-aligned header text at 134,
-    # and above the description at y=79.
+    # Defaults are the logo box on the current label: 2x3 stock (3in wide) on a
+    # 600 dpi ZM400, so 1800 dots across. The box sits clear of the left margin
+    # at 59 and the right-aligned header text at 396, above the description.
     #
-    # These defaults were 149x63 when the stock was believed to be 4in wide. If
-    # the stock changes again, change them here as well as in zpl.ts, or the
-    # next person regenerates at the wrong size without being told.
-    [int]$Width  = 104,
-    [int]$Height = 44,
+    # These have been wrong twice already - 149x63 when the stock was believed
+    # to be 4in, then 104x44 when the printer was assumed to be 203 dpi. Both
+    # the stock size AND the resolution feed this. If either changes, change it
+    # here as well as in zpl.ts, or the next person regenerates at the wrong
+    # size and nothing says so.
+    [int]$Width  = 307,
+    [int]$Height = 130,
 
     # Anything darker than this burns. Raised above the midpoint on purpose:
     # scaling anti-aliases the strokes to grey, and a strict 128 thins the
