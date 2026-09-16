@@ -158,6 +158,45 @@ export function escapeZpl(value: unknown, maxLength = 64): string {
     .slice(0, maxLength);
 }
 
+/**
+ * A character advances a little under half its height in this font.
+ *
+ * Measured off the first real print rather than taken from a specification:
+ * 41 characters filled 1682 dots at height 84. Font 0 is proportional, so this
+ * is an average and nothing here should depend on it being exact.
+ */
+const CHAR_ADVANCE = 0.49;
+
+/**
+ * Would this text fit in `lines` lines, wrapping on spaces the way ^FB does?
+ *
+ * Counting characters against a budget is not good enough: greedy wrapping
+ * leaves a ragged gap at the end of each line, so text well inside a character
+ * budget can still need an extra line. Simulating the wrap catches that, which
+ * matters because ^FB clips the overflow silently and real part descriptions
+ * carry their identifying numbers at the END - exactly what gets lost.
+ *
+ * A single word longer than a line counts as not fitting. ^FB would in fact
+ * break it, but a description with a word that long wants a smaller font.
+ */
+function wrapsWithin(text: string, charsPerLine: number, lines: number): boolean {
+  if (charsPerLine < 1) return false;
+  let used = 1;
+  let filled = 0;
+  for (const word of text.split(" ")) {
+    if (word.length > charsPerLine) return false;
+    const need = filled === 0 ? word.length : filled + 1 + word.length;
+    if (need <= charsPerLine) {
+      filled = need;
+    } else {
+      used++;
+      filled = word.length;
+      if (used > lines) return false;
+    }
+  }
+  return true;
+}
+
 /** Clamp copies to something a fat-fingered entry can't turn into 900 labels. */
 export const MAX_COPIES = 200;
 
@@ -214,11 +253,51 @@ export function buildItemLabel(fields: ItemLabelFields): string {
     `^FO${headerLeft},${dy(0.125)}^A0N,${headerSize},${headerSize}` +
     `^FB${headerWidth},1,0,R,0^FDTork Part: ${itemCode} | Tork SO: ${soNumber}^FS`;
 
-  // Centred description, wrapping to two lines.
-  const descSize = fs(0.07);
+  // Centred description over two lines, in a block narrower than the label.
+  //
+  // The width is what decides where the text breaks, and the sample breaks it
+  // evenly - "1/2 BRZ 200/400 SB RETAINER RING" then "5346-100 MIL-F-1183".
+  // A full-width block fits more on the first line and leaves a stub on the
+  // second, which is why the first real print did not match the sample.
+  //
+  // The narrower block costs capacity, and ^FB CLIPS what will not fit rather
+  // than shrinking it. Measured against the live catalogue: of 67,175 active
+  // parts the average description is 43 characters, but 7% exceed 68 and the
+  // longest is 200. Clipping one label in fourteen is not acceptable on
+  // something that goes to a customer, so the font steps down instead.
+  //
+  // CHAR_ADVANCE comes from the first real print rather than a specification:
+  // 41 characters of this font filled 1682 dots at height 84, so a character
+  // advances a little under half its height. It is an estimate, which is why
+  // the step-down threshold is deliberately conservative.
+  // The narrow block is tried first because it reproduces the sample. When a
+  // description will not fit, widening comes before shrinking - a wider block
+  // costs only the resemblance, whereas a smaller font costs legibility on a
+  // label read at arm's length in a warehouse.
+  const DESC_LINES = 2;
+  const narrowWidth = Math.round(PW * 0.78);
+  const ladder = [
+    { width: narrowWidth, size: fs(0.07) },
+    { width: contentWidth, size: fs(0.07) },
+    { width: contentWidth, size: fs(0.057) },
+    { width: contentWidth, size: fs(0.048) },
+  ];
+
+  const perLine = (width: number, size: number) => Math.floor(width / (CHAR_ADVANCE * size));
+  const chosen = ladder.find((o) => wrapsWithin(description, perLine(o.width, o.size), DESC_LINES)) ??
+    ladder[ladder.length - 1];
+
+  // Only reached by descriptions longer than about 118 characters, which is
+  // 0.3% of the catalogue. Truncating on a whole character is at least
+  // predictable, where ^FB would silently clip mid-glyph.
+  const descCap = perLine(chosen.width, chosen.size) * DESC_LINES;
+  const descText =
+    description.length <= descCap ? description : escapeZpl(fields.itemDescription, descCap);
+  const descLeft = Math.round((PW - chosen.width) / 2);
+
   const descBlock =
-    `^FO${dx(MARGIN)},${dy(0.195)}^A0N,${descSize},${descSize}` +
-    `^FB${contentWidth},2,4,C,0^FD${description}^FS`;
+    `^FO${descLeft},${dy(0.195)}^A0N,${chosen.size},${chosen.size}` +
+    `^FB${chosen.width},${DESC_LINES},4,C,0^FD${descText}^FS`;
 
   // Code 128 of the customer PO, with no interpretation line: the sample
   // prints none under the bars, because the number appears as text on the row
@@ -231,10 +310,17 @@ export function buildItemLabel(fields: ItemLabelFields): string {
   // 600. Leaving it at 2 on this printer would have produced bars a third of
   // the width a scanner can resolve, which fails silently: the label looks
   // right to a person and simply will not read.
+  // Code 128 also wants a quiet zone: clear space to the left of the first bar
+  // of at least ten narrow bars. The shared margin gives 59 dots against a
+  // 60 dot requirement - a single dot under, which is the sort of thing that
+  // reads fine on one scanner and intermittently on another. The first printed
+  // label did scan, so this is insurance rather than a repair. Eleven modules
+  // rather than the bare ten, since the cost is 0.01 inch of label.
   const barModule = Math.max(2, Math.round(DPI * 0.01));
+  const barLeft = Math.max(dx(MARGIN), barModule * 11);
   const barHeight = fs(0.145);
   const barcode = customerPO
-    ? `^BY${barModule},3,${barHeight}^FO${dx(MARGIN)},${dy(0.365)}^BCN,${barHeight},N,N,N^FD${customerPO}^FS`
+    ? `^BY${barModule},3,${barHeight}^FO${barLeft},${dy(0.365)}^BCN,${barHeight},N,N,N^FD${customerPO}^FS`
     : "";
 
   const bodySize = fs(0.065);
