@@ -305,14 +305,17 @@ export async function uploadReceivingSessionToSharePoint(
     const entry = entries[i];
     onProgress?.({ current: i + 1, total: entries.length, fileName: entry.filename });
     try {
-      await uploadFileToSharePoint(
+      const savedAs = await uploadFileToSharePoint(
         entry.folder,
         entry.filename,
         entry.blob,
         entry.contentType,
         entry.conflictBehavior ?? "replace",
       );
-      landed.push(entry);
+      // Everything after this — the Azure copy and the card — records the name
+      // SharePoint actually used, which differs from the requested one when a
+      // "rename" upload found the name taken.
+      landed.push({ ...entry, filename: savedAs });
       if (entry.destination === "web-images") webImagesUploaded++;
       else uploaded++;
     } catch (err) {

@@ -169,30 +169,47 @@ async function ensureSharePointFolder(driveId: string, folderPath: string): Prom
  *  conflictBehavior: Graph DriveItem conflict behavior. Defaults to "replace"
  *  (the implicit small-file PUT behavior). Pass "rename" to keep existing
  *  files untouched and have Graph append a numeric suffix to the new upload —
- *  used by the per-part web images folder so older shots aren't clobbered. */
+ *  used by the per-part web images folder so older shots aren't clobbered.
+ *
+ *  Returns the name the file was actually saved under. With "rename" that can
+ *  differ from what was asked for ("M131548.jpg" lands as "M131548 1.jpg"),
+ *  and anything recording where the file went must use this name. Using the
+ *  requested one made the Azure copy overwrite the older shot and the index
+ *  card get skipped as a duplicate. Falls back to the requested name if the
+ *  response can't be read, which is only wrong when a rename happened. */
 export async function uploadFileToSharePoint(
   folderPath: string,
   fileName: string,
   blob: Blob,
   contentType: string = "image/jpeg",
   conflictBehavior: "replace" | "rename" | "fail" = "replace"
-): Promise<void> {
+): Promise<string> {
   const driveId = await getSharePointDriveId();
   await ensureSharePointFolder(driveId, folderPath);
 
   const itemPath = `${folderPath}/${fileName}`;
 
   if (blob.size > 4 * 1024 * 1024) {
-    await uploadLargeFileToSharePoint(driveId, itemPath, blob, contentType, conflictBehavior);
-    return;
+    return (await uploadLargeFileToSharePoint(driveId, itemPath, blob, contentType, conflictBehavior)) ?? fileName;
   }
 
   const qs = `?@microsoft.graph.conflictBehavior=${conflictBehavior}`;
-  await graphFetch(`/drives/${driveId}/root:/${encodePath(itemPath)}:/content${qs}`, {
+  const res = await graphFetch(`/drives/${driveId}/root:/${encodePath(itemPath)}:/content${qs}`, {
     method: "PUT",
     headers: { "Content-Type": contentType },
     body: blob,
   });
+  return (await savedName(res)) ?? fileName;
+}
+
+/** The DriveItem name from an upload response, or null if it isn't there. */
+async function savedName(res: Response): Promise<string | null> {
+  try {
+    const item = await res.json();
+    return typeof item?.name === "string" && item.name ? item.name : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -212,7 +229,7 @@ async function uploadLargeFileToSharePoint(
   blob: Blob,
   _contentType: string,
   conflictBehavior: "replace" | "rename" | "fail" = "rename"
-): Promise<void> {
+): Promise<string | null> {
   const sessionRes = await graphFetch(
     `/drives/${driveId}/root:/${encodePath(itemPath)}:/createUploadSession`,
     {
@@ -246,5 +263,8 @@ async function uploadLargeFileToSharePoint(
       throw new Error(`Upload chunk failed: ${res.status}`);
     }
     offset = end;
+    // The last chunk answers with the finished DriveItem, name included.
+    if (offset >= blob.size) return savedName(res);
   }
+  return null;
 }
