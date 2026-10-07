@@ -5,6 +5,11 @@ import {
   isUpsConfigured,
   shippingSpeedToServiceCode,
 } from "../services/ups-rating.js";
+import {
+  getFedexRate,
+  isFedexConfigured,
+  shippingSpeedToFedexService,
+} from "../services/fedex-rating.js";
 
 const router = Router();
 
@@ -100,6 +105,65 @@ router.post("/ups-rate", async (req, res) => {
   } catch (err) {
     const ms = Date.now() - t0;
     console.error(`[UPS] Rate lookup failed after ${ms}ms:`, err);
+    res.status(502).json({
+      error: "RATE_LOOKUP_FAILED",
+      message: err instanceof Error ? err.message : "Unknown error",
+    });
+  }
+});
+
+/**
+ * POST /api/freight/fedex-rate
+ * Same body and response as /ups-rate, priced by FedEx. Returns 503 until
+ * FEDEX_CLIENT_ID / FEDEX_CLIENT_SECRET / FEDEX_ACCOUNT_NUMBER are set.
+ */
+router.post("/fedex-rate", async (req, res) => {
+  if (!isFedexConfigured()) {
+    res.status(503).json({
+      error: "FEDEX_UNAVAILABLE",
+      message: "FedEx rating not configured on the proxy",
+    });
+    return;
+  }
+
+  const originZip = normalizeZip(req.body?.originZip);
+  const destZip = normalizeZip(req.body?.destZip) ?? normalizeZip(getDefaultDestZip());
+  const weightLbs = parseWeightLbs(req.body?.weight);
+  if (!originZip || !destZip || !weightLbs) {
+    res.status(400).json({
+      error: "VALIDATION_ERROR",
+      message: "originZip and destZip must be 5-digit US ZIPs and weight a positive number of pounds",
+    });
+    return;
+  }
+
+  // No default service, for the same reason as UPS above.
+  const rawSpeed = typeof req.body?.shippingSpeed === "string" ? req.body.shippingSpeed.trim() : "";
+  const serviceType = shippingSpeedToFedexService(rawSpeed);
+  if (!serviceType) {
+    res.status(422).json({
+      error: rawSpeed ? "SPEED_NOT_RECOGNIZED" : "SPEED_MISSING",
+      speed: rawSpeed,
+      message: rawSpeed
+        ? `Shipping speed "${rawSpeed}" isn't a recognised FedEx service — enter the freight manually`
+        : "No shipping speed on this receipt — enter the freight manually",
+    });
+    return;
+  }
+
+  const user = (req as any).user as { email?: string } | undefined;
+  const t0 = Date.now();
+  try {
+    const result = await getFedexRate({ originZip, destZip, weightLbs, serviceType });
+    console.log(
+      `[FedEx] Rate for ${user?.email ?? "unknown"} (${Date.now() - t0}ms): ` +
+        `${originZip} -> ${destZip}, ${weightLbs} LBS, svc=${serviceType} -> ` +
+        `$${result.listAmount.toFixed(2)} (list)` +
+        (result.negotiatedAmount != null ? `, $${result.negotiatedAmount.toFixed(2)} (account)` : "")
+    );
+    res.json(result);
+  } catch (err) {
+    console.error(`[FedEx] Rate lookup failed after ${Date.now() - t0}ms:`, err);
     res.status(502).json({
       error: "RATE_LOOKUP_FAILED",
       message: err instanceof Error ? err.message : "Unknown error",

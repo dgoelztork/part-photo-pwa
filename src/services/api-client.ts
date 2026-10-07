@@ -532,23 +532,36 @@ export class UnknownShippingSpeedError extends Error {
   }
 }
 
+/** What the rate lookups take; the proxy defaults destZip when it's blank. */
+export interface FreightRateInput {
+  originZip: string;
+  destZip: string;
+  weight: string;
+  shippingSpeed?: string;
+}
+
 /**
  * Look up a UPS parcel rate. Returns null if rating is not configured on the
  * proxy (503) — callers should treat this as "rate unavailable" and skip.
  * Throws UnknownShippingSpeedError when the speed isn't a recognised service,
  * and Error on validation problems or upstream UPS failures.
  */
-export async function getUpsRate(input: {
-  originZip: string;
-  destZip: string;
-  weight: string;
-  shippingSpeed?: string;
-}): Promise<UpsRateResult | null> {
-  const res = await proxyFetch("/api/freight/ups-rate", {
+export function getUpsRate(input: FreightRateInput): Promise<UpsRateResult | null> {
+  return freightRate("/api/freight/ups-rate", input);
+}
+
+/** FedEx twin of getUpsRate — same input, same result shape, same errors. */
+export function getFedexRate(input: FreightRateInput): Promise<UpsRateResult | null> {
+  return freightRate("/api/freight/fedex-rate", input);
+}
+
+async function freightRate(path: string, input: FreightRateInput): Promise<UpsRateResult | null> {
+  const res = await proxyFetch(path, {
     method: "POST",
     body: JSON.stringify(input),
   });
-  if (res.status === 503) return null;
+  // 404 = a proxy older than this carrier's route; treat it as not set up.
+  if (res.status === 503 || res.status === 404) return null;
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: "Rate lookup failed" }));
     if (err.error === "SPEED_NOT_RECOGNIZED" || err.error === "SPEED_MISSING") {

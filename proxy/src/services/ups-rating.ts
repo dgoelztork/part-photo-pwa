@@ -35,7 +35,7 @@ export function getDefaultDestZip(): string {
  * state + DC. Territories (PR/VI/etc.) and APO/FPO addresses return null —
  * UPS rating won't quote those over this endpoint anyway.
  */
-function stateFromZip(zip5: string): string | null {
+export function stateFromZip(zip5: string): string | null {
   const n = parseInt(zip5.slice(0, 3), 10);
   if (!isFinite(n)) return null;
   if (n === 5) return "NY";

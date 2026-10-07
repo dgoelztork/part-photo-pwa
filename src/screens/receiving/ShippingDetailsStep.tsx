@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSessionStore } from "../../stores/session-store";
 import { StepHeader } from "../../components/layout/StepHeader";
 import { StepNavigation } from "../../components/layout/StepNavigation";
-import { getUpsRate, UnknownShippingSpeedError } from "../../services/api-client";
+import { getFedexRate, getUpsRate, UnknownShippingSpeedError } from "../../services/api-client";
 import { TailscaleHint } from "../../components/TailscaleHint";
 import type { ShippingBox } from "../../types/session";
 
@@ -91,8 +91,8 @@ export function ShippingDetailsStep() {
 }
 
 /**
- * One editable box card with its own UPS rate lookup. Inputs are debounced
- * via the inner UpsRateRow so we don't hammer the proxy while typing.
+ * One editable box card with its own UPS / FedEx rate lookup. Inputs are debounced
+ * via the inner RateRow so we don't hammer the proxy while typing.
  */
 function BoxCard({
   index,
@@ -131,16 +131,16 @@ function BoxCard({
         onChange={(v) => onChange({ shipFromZip: v })}
         placeholder="From the shipping label"
       />
-      <UpsRateRow box={box} onChange={onChange} />
+      <RateRow box={box} onChange={onChange} />
     </div>
   );
 }
 
 /**
- * Per-box UPS rate. Watches the box's weight/origin/dest/speed (dest +
+ * Per-box UPS or FedEx rate. Watches the box's weight/origin/dest/speed (dest +
  * speed come from session.shippingDetails) and re-fetches when any change.
  */
-function UpsRateRow({
+function RateRow({
   box,
   onChange,
 }: {
@@ -161,19 +161,21 @@ function UpsRateRow({
   // the box. The Transporter text only decides when no button was tapped —
   // it's free text and has said "UPS" on boxes the receiver marked FedEx.
   const isUps = carrier ? carrier === "UPS" : transp.includes("UPS");
+  const isFedex = carrier ? carrier === "FedEx" : transp.includes("FEDEX");
+  const carrierName = isUps ? "UPS" : isFedex ? "FedEx" : null;
   const originZip = (box.shipFromZip ?? "").match(/\d{5}/)?.[0] ?? "";
   const destZip = (sd?.shipToZip ?? "").match(/\d{5}/)?.[0] ?? "";
   const weightNum = parseFloat((box.weight ?? "").match(/(\d+(?:\.\d+)?)/)?.[1] ?? "");
   const speed = sd?.shipSpeed ?? "";
 
-  const eligible = isUps && Boolean(originZip) && Boolean(destZip) && weightNum > 0;
+  const eligible = carrierName !== null && Boolean(originZip) && Boolean(destZip) && weightNum > 0;
 
   useEffect(() => {
     if (!eligible) {
       setStatus("idle");
-      // Don't let a UPS rate looked up earlier ride along on a box that is
-      // now marked FedEx (or lost the weight/ZIP it was priced from).
-      if ((box.freightRateLabel ?? "").startsWith("UPS")) {
+      // Don't let a rate looked up earlier ride along on a box whose carrier
+      // changed (or lost the weight/ZIP it was priced from).
+      if (box.freightRateLabel) {
         onChange({ freightRate: "", freightRateLabel: "" });
       }
       return;
@@ -183,7 +185,8 @@ function UpsRateRow({
     setError(null);
     const handle = setTimeout(async () => {
       try {
-        const result = await getUpsRate({
+        const lookup = carrierName === "FedEx" ? getFedexRate : getUpsRate;
+        const result = await lookup({
           originZip,
           destZip,
           weight: String(weightNum),
@@ -196,7 +199,7 @@ function UpsRateRow({
           return;
         }
         const amount = result.listAmount;
-        const label = `UPS ${result.serviceName} (list)`;
+        const label = `${carrierName} ${result.serviceName} (list)`;
         setStatus("ok");
         onChange({ freightRate: amount.toFixed(2), freightRateLabel: label });
       } catch (e) {
@@ -212,14 +215,14 @@ function UpsRateRow({
     return () => clearTimeout(handle);
     // onChange identity changes per render — exclude it from deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eligible, originZip, destZip, weightNum, speed]);
+  }, [eligible, carrierName, originZip, destZip, weightNum, speed]);
 
-  if (!isUps) return null;
+  if (!carrierName) return null;
 
   return (
     <div className="border-t border-border pt-3">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-medium text-text-secondary">UPS Rate</span>
+        <span className="text-xs font-medium text-text-secondary">{carrierName} Rate</span>
         {status === "loading" && (
           <span className="text-xs text-text-secondary animate-pulse">Looking up…</span>
         )}
@@ -239,7 +242,9 @@ function UpsRateRow({
       )}
 
       {eligible && status === "unavailable" && (
-        <p className="text-xs text-text-secondary">UPS rating not configured on the proxy.</p>
+        <p className="text-xs text-text-secondary">
+          {carrierName} pricing isn't set up yet, so no rate for this box.
+        </p>
       )}
 
       {eligible && status === "speed" && (
