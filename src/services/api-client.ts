@@ -221,6 +221,14 @@ export interface PicklistResult {
   shipToAddress: string;
   vesselJob: string;
   soComments: string;
+  /** SO ship speed by name, e.g. "GROUND" or "*2ND DAY*". */
+  shipSpeed: string;
+  /** SO shipping type by name, e.g. "BEST WAY" or "CALL WHEN READY". */
+  shipVia: string;
+  /** SO "Charge Freight To", e.g. "Prepaid & Add" or "Collect". */
+  freightTerms: string;
+  insideSales: string;
+  outsideSales: string;
   orderDate: string | null;
   dueDate: string | null;
   soStatus: string;

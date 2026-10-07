@@ -157,7 +157,10 @@ function UpsRateRow({
   const sd = session?.shippingDetails;
   const carrier = session?.carrier;
   const transp = (sd?.transpCode ?? "").toUpperCase();
-  const isUps = carrier === "UPS" || transp.includes("UPS");
+  // The carrier button the receiver tapped is the truth about who delivered
+  // the box. The Transporter text only decides when no button was tapped —
+  // it's free text and has said "UPS" on boxes the receiver marked FedEx.
+  const isUps = carrier ? carrier === "UPS" : transp.includes("UPS");
   const originZip = (box.shipFromZip ?? "").match(/\d{5}/)?.[0] ?? "";
   const destZip = (sd?.shipToZip ?? "").match(/\d{5}/)?.[0] ?? "";
   const weightNum = parseFloat((box.weight ?? "").match(/(\d+(?:\.\d+)?)/)?.[1] ?? "");
@@ -168,6 +171,11 @@ function UpsRateRow({
   useEffect(() => {
     if (!eligible) {
       setStatus("idle");
+      // Don't let a UPS rate looked up earlier ride along on a box that is
+      // now marked FedEx (or lost the weight/ZIP it was priced from).
+      if ((box.freightRateLabel ?? "").startsWith("UPS")) {
+        onChange({ freightRate: "", freightRateLabel: "" });
+      }
       return;
     }
     const reqId = ++reqIdRef.current;

@@ -197,7 +197,10 @@ export function ReviewSubmit() {
             // post to the correct site — Pascagoula POs land in Pascagoula,
             // not a hardcoded default. Fallback covers sessions that were
             // already in-flight before this field existed (all warehouse-01).
-            warehouse: l.warehouse || "01",
+            // "S" (Stock PO Warehouse) only marks a PO as stock replenishment;
+            // the goods are shelved in 01, which is also what receipts keyed
+            // straight into SAP do with S lines.
+            warehouse: !l.warehouse || l.warehouse === "S" ? "01" : l.warehouse,
           }));
 
         const grpoDetails = buildGrpoDetails(session);
@@ -559,7 +562,6 @@ export function ReviewSubmit() {
       {showPicklist && session.poNumber && (
         <PicklistView
           poNumber={session.poNumber}
-          grpoDocNum={grpoDocNum}
           receivedByItem={receivedByItem}
           onClose={() => setShowPicklist(false)}
         />

@@ -20,6 +20,64 @@ function escapeODataString(value: string): string {
   return value.replace(/'/g, "''");
 }
 
+/** Display names for ORDR.U_FrtChargeType ("sCharge Freight To"), from its valid values in SAP. */
+const FREIGHT_TERMS: Record<string, string> = {
+  "PP-Add": "Prepaid & Add",
+  Allowed: "Allowed",
+  Collect: "Collect",
+  "3rdParty": "3rd Party",
+};
+
+interface HeaderNames {
+  shipSpeed: string;
+  shipVia: string;
+  insideSales: string;
+  outsideSales: string;
+}
+
+/** GET an SL path and return the JSON, or null on any failure. */
+async function slGetOrNull(path: string): Promise<Record<string, any> | null> {
+  try {
+    const res = await slFetch(path);
+    return res.ok ? ((await res.json()) as Record<string, any>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Turn the SO header's codes into the names people know. At Tork the inside
+ * salesperson is the document owner (an employee, job title "Inside Sales")
+ * and the outside salesperson is the sales employee. Every lookup is optional:
+ * a missing name leaves its field blank rather than failing the picklist.
+ */
+async function fetchHeaderNames(so: Record<string, any>): Promise<HeaderNames> {
+  const speedCode = String(so.U_ShipSpeed ?? "").trim();
+  const viaCode = so.TransportationCode;
+  const outsideCode = so.SalesPersonCode;
+  const ownerId = so.DocumentsOwner;
+
+  const [speeds, via, outside, owner] = await Promise.all([
+    speedCode ? slGetOrNull(`/U_SHIP_SPEED`) : null,
+    viaCode != null && viaCode >= 0 ? slGetOrNull(`/ShippingTypes(${viaCode})?$select=Name`) : null,
+    outsideCode != null && outsideCode >= 0
+      ? slGetOrNull(`/SalesPersons(${outsideCode})?$select=SalesEmployeeName`)
+      : null,
+    ownerId != null && ownerId >= 0
+      ? slGetOrNull(`/EmployeesInfo(${ownerId})?$select=FirstName,LastName`)
+      : null,
+  ]);
+
+  const speed = (speeds?.value ?? []).find((s: Record<string, any>) => s.Code === speedCode);
+
+  return {
+    shipSpeed: speed?.Name ?? speedCode,
+    shipVia: via?.Name ?? "",
+    insideSales: owner ? [owner.FirstName, owner.LastName].filter(Boolean).join(" ") : "",
+    outsideSales: outside?.SalesEmployeeName ?? "",
+  };
+}
+
 /**
  * Live on-hand for a set of item codes. Batched — SL takes an `or` chain of
  * ItemCode filters, but a long URL will 400, so chunk it.
@@ -131,7 +189,8 @@ router.get("/:poNumber", async (req, res) => {
     const soRes = await slFetch(
       `/Orders?$filter=DocNum eq ${soNumberRaw}` +
         `&$select=DocEntry,DocNum,CardCode,CardName,DocDate,DocDueDate,DocumentStatus,` +
-        `NumAtCard,ShipToCode,Address2,Comments,U_VesselNameJobNumber,DocumentLines`
+        `NumAtCard,ShipToCode,Address2,Comments,U_VesselNameJobNumber,` +
+        `TransportationCode,U_ShipSpeed,U_FrtChargeType,SalesPersonCode,DocumentsOwner,DocumentLines`
     );
 
     if (!soRes.ok) {
@@ -154,9 +213,10 @@ router.get("/:poNumber", async (req, res) => {
 
     const rawLines: Record<string, any>[] = so.DocumentLines ?? [];
 
-    // 3. Live stock for everything on the order.
+    // 3. Live stock for everything on the order, plus the names behind the
+    //    header's shipping and salesperson codes.
     const itemCodes = [...new Set(rawLines.map((l) => String(l.ItemCode)).filter(Boolean))];
-    const stock = await fetchStock(itemCodes);
+    const [stock, names] = await Promise.all([fetchStock(itemCodes), fetchHeaderNames(so)]);
 
     const poDocNum = po.DocNum;
 
@@ -207,6 +267,11 @@ router.get("/:poNumber", async (req, res) => {
       shipToAddress: String(so.Address2 ?? "").replace(/\r\n?/g, "\n").trim(),
       vesselJob: so.U_VesselNameJobNumber ?? "",
       soComments: so.Comments ?? "",
+      shipSpeed: names.shipSpeed,
+      shipVia: names.shipVia,
+      freightTerms: FREIGHT_TERMS[so.U_FrtChargeType] ?? so.U_FrtChargeType ?? "",
+      insideSales: names.insideSales,
+      outsideSales: names.outsideSales,
       orderDate: so.DocDate ?? null,
       dueDate: so.DocDueDate ?? null,
       soStatus: so.DocumentStatus ?? "",

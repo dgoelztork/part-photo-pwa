@@ -136,6 +136,9 @@ function createEmptySession(userName: string): ReceivingSession {
  * THROWS on functions, where JSON silently dropped them — hence `partialize`
  * below must return only the data fields, never the store's actions.
  */
+/** Transporter values that just echo a carrier button, as opposed to something typed. */
+const CARRIER_NAMES = ["UPS", "FEDEX", "LTL", "OTHER"];
+
 const idbStorage = {
   getItem: async (name: string): Promise<StorageValue<SessionStore> | null> => {
     return (await get<StorageValue<SessionStore>>(name)) ?? null;
@@ -313,11 +316,15 @@ export const useSessionStore = create<SessionStore>()(
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, (s) => ({
             carrier,
-            // Mirror into the editable shipping details if the receiver hasn't
-            // overridden it yet — saves a re-entry on the SHIPPING_DETAILS step.
-            shippingDetails: s.shippingDetails.transpCode
-              ? s.shippingDetails
-              : { ...s.shippingDetails, transpCode: carrier },
+            // Mirror into the editable shipping details unless the receiver
+            // typed something of their own there — saves a re-entry on the
+            // SHIPPING_DETAILS step, and keeps a switch from UPS to FedEx from
+            // leaving "UPS" behind in the Transporter box.
+            shippingDetails:
+              !s.shippingDetails.transpCode ||
+              CARRIER_NAMES.includes(s.shippingDetails.transpCode.trim().toUpperCase())
+                ? { ...s.shippingDetails, transpCode: carrier }
+                : s.shippingDetails,
           })),
         }));
       },

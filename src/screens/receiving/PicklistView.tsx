@@ -22,12 +22,10 @@ import { TailscaleHint } from "../../components/TailscaleHint";
  */
 export function PicklistView({
   poNumber,
-  grpoDocNum,
   receivedByItem,
   onClose,
 }: {
   poNumber: string;
-  grpoDocNum: number | null;
   /** Item code → qty received on this receipt, for the RECV column. */
   receivedByItem: Record<string, number>;
   onClose: () => void;
@@ -92,7 +90,7 @@ export function PicklistView({
           </div>
         )}
 
-        {picklist && <PicklistDocument picklist={picklist} grpoDocNum={grpoDocNum} receivedByItem={receivedByItem} />}
+        {picklist && <PicklistDocument picklist={picklist} receivedByItem={receivedByItem} />}
       </div>
 
       {/* Actions — never printed */}
@@ -119,11 +117,9 @@ export function PicklistView({
 
 function PicklistDocument({
   picklist,
-  grpoDocNum,
   receivedByItem,
 }: {
   picklist: PicklistResult;
-  grpoDocNum: number | null;
   receivedByItem: Record<string, number>;
 }) {
   // Closed lines have already shipped — they'd only pad the printout.
@@ -146,20 +142,18 @@ function PicklistDocument({
     <div className="picklist-print p-4 max-w-3xl mx-auto text-text">
       {/* Header */}
       <div className="border-b-2 border-text pb-3 mb-3">
-        <div className="flex justify-between items-start gap-4">
+        <div className="flex justify-between items-center gap-4">
           <div>
             <h1 className="text-xl font-bold">PICKLIST</h1>
             <p className="text-sm">
               Sales Order <span className="font-bold">{picklist.soNumber}</span>
             </p>
           </div>
-          <div className="text-right text-xs">
-            <p>
-              From PO <span className="font-semibold">{picklist.poNumber}</span>
-              {grpoDocNum && <> · GRPO <span className="font-semibold">{grpoDocNum}</span></>}
-            </p>
-            <p className="text-text-secondary">{formatDateTime(picklist.generatedAt)}</p>
-          </div>
+          <img
+            src={`${import.meta.env.BASE_URL}tork-logo.png`}
+            alt="Tork Systems"
+            className="h-12 w-auto"
+          />
         </div>
       </div>
 
@@ -169,6 +163,15 @@ function PicklistDocument({
         <Field label="Customer PO" value={picklist.customerPO} />
         <Field label="Ship To" value={picklist.shipToCode} />
         <Field label="Due Date" value={formatDate(picklist.dueDate)} />
+        <Field label="Ship Speed" value={picklist.shipSpeed} />
+        <Field label="Ship Via" value={picklist.shipVia} />
+        <Field label="Freight Terms" value={picklist.freightTerms} />
+        {(picklist.insideSales || picklist.outsideSales) && (
+          <Field
+            label="I.S / O.S"
+            value={`${picklist.insideSales || "—"} / ${picklist.outsideSales || "—"}`}
+          />
+        )}
         {picklist.vesselJob && <Field label="Vessel / Job" value={picklist.vesselJob} />}
         {picklist.shipToAddress && (
           <div className="col-span-2">
@@ -186,10 +189,8 @@ function PicklistDocument({
             <th className="py-1 pr-2 font-semibold">Item</th>
             <th className="py-1 px-1 font-semibold text-center w-10">Whs</th>
             <th className="py-1 px-1 font-semibold text-center w-10">Ord</th>
-            <th className="py-1 px-1 font-semibold text-center w-10">Open</th>
             <th className="py-1 px-1 font-semibold text-center w-12">Recv</th>
-            <th className="py-1 px-1 font-semibold text-center w-14">On Hand</th>
-            <th className="py-1 pl-1 font-semibold text-center w-14">Status</th>
+            <th className="py-1 pl-1 font-semibold text-center w-14">On Hand</th>
           </tr>
         </thead>
         <tbody>
@@ -235,21 +236,11 @@ function PicklistDocument({
                 </td>
                 <td className="py-1.5 px-1 text-center">{line.warehouse}</td>
                 <td className="py-1.5 px-1 text-center">{line.orderedQty}</td>
-                <td className="py-1.5 px-1 text-center font-semibold">{line.openQty}</td>
                 <td className="py-1.5 px-1 text-center font-semibold text-success print:text-text">
                   {received ?? "—"}
                 </td>
-                <td className="py-1.5 px-1 text-center">
-                  {onHand === null ? "?" : onHand}
-                </td>
                 <td className="py-1.5 pl-1 text-center">
-                  {onHand === null ? (
-                    <span className="text-text-secondary">—</span>
-                  ) : canPick ? (
-                    <span className="font-semibold text-success print:text-text">PICK</span>
-                  ) : (
-                    <span className="font-semibold text-error print:text-text">SHORT</span>
-                  )}
+                  {onHand === null ? "?" : onHand}
                 </td>
               </tr>
             );
@@ -264,19 +255,8 @@ function PicklistDocument({
       )}
 
       {/* Footnotes */}
+      {/* Footer — the warehouse asked for the explanatory notes to come off the sheet. */}
       <div className="mt-4 pt-2 border-t border-border text-xs text-text-secondary flex flex-col gap-1">
-        {picklist.closedLineCount > 0 && (
-          <p>
-            {picklist.closedLineCount} closed line
-            {picklist.closedLineCount !== 1 ? "s" : ""} not shown (already shipped).
-          </p>
-        )}
-        <p>
-          Highlighted rows were ordered on PO {picklist.poNumber}. On-hand is live at the
-          line's warehouse and includes this receipt. PICK = enough on hand to fill the open
-          quantity.
-        </p>
-        {picklist.soComments && <p>SO notes: {picklist.soComments}</p>}
         <div className="hidden print:flex gap-8 pt-6 text-text">
           <span>Picked by: ______________________</span>
           <span>Date: ______________</span>
@@ -300,9 +280,4 @@ function formatDate(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   return isNaN(d.getTime()) ? "" : d.toLocaleDateString();
-}
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? "" : d.toLocaleString();
 }
