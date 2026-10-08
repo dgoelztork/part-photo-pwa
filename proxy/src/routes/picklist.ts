@@ -33,6 +33,32 @@ interface HeaderNames {
   shipVia: string;
   insideSales: string;
   outsideSales: string;
+  /** The document owner, printed as "Tork Contact" on SAP's pick list. */
+  contactEmail: string;
+  contactPhone: string;
+  /** Sales order series prefix, e.g. "T" — SAP prints the SO as "T 36679". */
+  seriesPrefix: string;
+}
+
+/** SO series → prefix. Series are set up once in SAP and barely change. */
+let seriesPrefixes: Map<number, string> | null = null;
+
+async function fetchSeriesPrefix(series: unknown): Promise<string> {
+  if (typeof series !== "number") return "";
+  if (!seriesPrefixes) {
+    try {
+      const res = await slFetch(`/SeriesService_GetDocumentSeries`, {
+        method: "POST",
+        body: JSON.stringify({ DocumentTypeParams: { Document: "17" } }),
+      });
+      if (!res.ok) return "";
+      const body = (await res.json()) as { value?: { Series: number; Prefix: string | null }[] };
+      seriesPrefixes = new Map((body.value ?? []).map((x) => [x.Series, x.Prefix ?? ""]));
+    } catch {
+      return "";
+    }
+  }
+  return seriesPrefixes.get(series) ?? "";
 }
 
 /** GET an SL path and return the JSON, or null on any failure. */
@@ -57,15 +83,16 @@ async function fetchHeaderNames(so: Record<string, any>): Promise<HeaderNames> {
   const outsideCode = so.SalesPersonCode;
   const ownerId = so.DocumentsOwner;
 
-  const [speeds, via, outside, owner] = await Promise.all([
+  const [speeds, via, outside, owner, seriesPrefix] = await Promise.all([
     speedCode ? slGetOrNull(`/U_SHIP_SPEED`) : null,
     viaCode != null && viaCode >= 0 ? slGetOrNull(`/ShippingTypes(${viaCode})?$select=Name`) : null,
     outsideCode != null && outsideCode >= 0
       ? slGetOrNull(`/SalesPersons(${outsideCode})?$select=SalesEmployeeName`)
       : null,
     ownerId != null && ownerId >= 0
-      ? slGetOrNull(`/EmployeesInfo(${ownerId})?$select=FirstName,LastName`)
+      ? slGetOrNull(`/EmployeesInfo(${ownerId})?$select=FirstName,LastName,eMail,OfficePhone,MobilePhone`)
       : null,
+    fetchSeriesPrefix(so.Series),
   ]);
 
   const speed = (speeds?.value ?? []).find((s: Record<string, any>) => s.Code === speedCode);
@@ -75,6 +102,9 @@ async function fetchHeaderNames(so: Record<string, any>): Promise<HeaderNames> {
     shipVia: via?.Name ?? "",
     insideSales: owner ? [owner.FirstName, owner.LastName].filter(Boolean).join(" ") : "",
     outsideSales: outside?.SalesEmployeeName ?? "",
+    contactEmail: owner?.eMail ?? "",
+    contactPhone: owner?.OfficePhone || owner?.MobilePhone || "",
+    seriesPrefix,
   };
 }
 
@@ -190,7 +220,8 @@ router.get("/:poNumber", async (req, res) => {
       `/Orders?$filter=DocNum eq ${soNumberRaw}` +
         `&$select=DocEntry,DocNum,CardCode,CardName,DocDate,DocDueDate,DocumentStatus,` +
         `NumAtCard,ShipToCode,Address2,Comments,U_VesselNameJobNumber,` +
-        `TransportationCode,U_ShipSpeed,U_FrtChargeType,SalesPersonCode,DocumentsOwner,DocumentLines`
+        `TransportationCode,U_ShipSpeed,U_FrtChargeType,SalesPersonCode,DocumentsOwner,Series,` +
+        `U_FOB,U_CustFrtAcctNo,U_FrtTracking,U_ImportantInfo,DocumentLines`
     );
 
     if (!soRes.ok) {
@@ -233,7 +264,9 @@ router.get("/:poNumber", async (req, res) => {
         orderedQty: l.Quantity ?? 0,
         openQty: l.RemainingOpenQuantity ?? 0,
         warehouse,
-        uom: l.UoMCode ?? l.MeasureUnit ?? "EA",
+        // UoMCode is "Manual" on items with no unit group; MeasureUnit holds the
+        // unit SAP actually prints (FT, EA).
+        uom: l.MeasureUnit || (l.UoMCode !== "Manual" && l.UoMCode) || "EA",
         // bost_Close / bost_Open — closed lines have already shipped.
         closed: l.LineStatus === "bost_Close",
         pickStatus: l.PickStatus ?? "",
@@ -270,8 +303,17 @@ router.get("/:poNumber", async (req, res) => {
       shipSpeed: names.shipSpeed,
       shipVia: names.shipVia,
       freightTerms: FREIGHT_TERMS[so.U_FrtChargeType] ?? so.U_FrtChargeType ?? "",
+      // SAP's own pick list prints the raw code ("PP-ADD"), so send that too.
+      freightTermsCode: String(so.U_FrtChargeType ?? "").toUpperCase(),
+      fob: so.U_FOB ?? "",
+      freightAccount: so.U_CustFrtAcctNo ?? "",
+      tracking: so.U_FrtTracking ?? "",
+      importantInfo: so.U_ImportantInfo ?? "",
+      soSeriesPrefix: names.seriesPrefix,
       insideSales: names.insideSales,
       outsideSales: names.outsideSales,
+      contactEmail: names.contactEmail,
+      contactPhone: names.contactPhone,
       orderDate: so.DocDate ?? null,
       dueDate: so.DocDueDate ?? null,
       soStatus: so.DocumentStatus ?? "",

@@ -75,8 +75,10 @@ button { touch-action: manipulation; }
 
   .picklist-print {
     max-width: none;
-    padding: 0;
+    padding: 0 !important;
     color: #000;
+    /* Undo the on-screen shrink-to-fit (PicklistView useFitZoom). */
+    zoom: 1 !important;
   }
   /* Keep a line's item code, description and quantities on the same page, and
      repeat the column headers on every sheet. */

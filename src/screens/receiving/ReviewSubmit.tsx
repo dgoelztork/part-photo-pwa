@@ -125,13 +125,6 @@ export function ReviewSubmit() {
 
   const poDocEntry = session.poDocEntry;
 
-  // Qty received per item on this receipt, for the picklist's RECV column. A
-  // part can appear on more than one PO line, so sum rather than overwrite.
-  const receivedByItem = confirmedLines.reduce<Record<string, number>>((acc, l) => {
-    acc[l.itemCode] = (acc[l.itemCode] ?? 0) + l.receivedQty;
-    return acc;
-  }, {});
-
   /**
    * Send the photos and stamp the folder URL on the GRPO. Shared by the first
    * attempt and the retry, so a retried upload behaves identically.
@@ -562,7 +555,6 @@ export function ReviewSubmit() {
       {showPicklist && session.poNumber && (
         <PicklistView
           poNumber={session.poNumber}
-          receivedByItem={receivedByItem}
           onClose={() => setShowPicklist(false)}
         />
       )}

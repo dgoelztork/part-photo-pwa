@@ -227,8 +227,20 @@ export interface PicklistResult {
   shipVia: string;
   /** SO "Charge Freight To", e.g. "Prepaid & Add" or "Collect". */
   freightTerms: string;
+  /** Raw "Charge Freight To" code as SAP prints it, e.g. "PP-ADD". */
+  freightTermsCode: string;
+  fob: string;
+  /** Customer's own freight account (U_CustFrtAcctNo). */
+  freightAccount: string;
+  tracking: string;
+  importantInfo: string;
+  /** SO series prefix, e.g. "T". */
+  soSeriesPrefix: string;
+  /** Inside sales = the document owner, SAP's "Tork Contact". */
   insideSales: string;
   outsideSales: string;
+  contactEmail: string;
+  contactPhone: string;
   orderDate: string | null;
   dueDate: string | null;
   soStatus: string;

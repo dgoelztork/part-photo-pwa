@@ -1,10 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   fetchPicklist,
   NoSalesOrderError,
   type PicklistResult,
-  type PicklistLine,
 } from "../../services/api-client";
 import { TailscaleHint } from "../../components/TailscaleHint";
 
@@ -22,12 +21,9 @@ import { TailscaleHint } from "../../components/TailscaleHint";
  */
 export function PicklistView({
   poNumber,
-  receivedByItem,
   onClose,
 }: {
   poNumber: string;
-  /** Item code → qty received on this receipt, for the RECV column. */
-  receivedByItem: Record<string, number>;
   onClose: () => void;
 }) {
   const [picklist, setPicklist] = useState<PicklistResult | null>(null);
@@ -90,7 +86,7 @@ export function PicklistView({
           </div>
         )}
 
-        {picklist && <PicklistDocument picklist={picklist} receivedByItem={receivedByItem} />}
+        {picklist && <PicklistDocument picklist={picklist} />}
       </div>
 
       {/* Actions — never printed */}
@@ -115,169 +111,219 @@ export function PicklistView({
   );
 }
 
-function PicklistDocument({
-  picklist,
-  receivedByItem,
-}: {
-  picklist: PicklistResult;
-  receivedByItem: Record<string, number>;
-}) {
+/** Small print under the logo — the same block SAP's pick list and XO's order PDFs carry. */
+const BRAND_TAGLINES = [
+  "Marine Valve Experts (TM)",
+  "US-Owned Small Business",
+  "CAGE: 6VBX1",
+  "DUNS: 07-862-7498",
+];
+
+const LIMITATION_OF_LIABILITY =
+  "LIMITATION OF LIABILITY: UNDER NO CIRCUMSTANCES SHALL TORK SYSTEMS INC BE LIABLE TO PURCHASER FOR " +
+  "INCIDENTAL, CONSEQUENTIAL OR OTHER DAMAGES IN EXCESS OF AN AMOUNT EQUAL TO THE NET CONTRACT VALUE OF THE " +
+  "PRODUCTS PROVIDED BY TORK SYSTEMS TO PURCHASER WITH THIS QUOTATION UNDER OR IN CONNECTION WITH ORDERS FOR " +
+  "PRODUCTS AND THESE TERMS AND CONDITIONS, WHETHER ANY CLAIM FOR RECOVERY IS BASED UPON OR ARISES OUT OF " +
+  "THEORIES OF BREACH OF CONTRACT, BREACH OF WARRANTY, INDEMNIFICATION, NEGLIGENCE, TORT (INCLUDING STRICT " +
+  "LIABILITY) OR OTHERWISE. FURTHERMORE, UNDER NO CIRCUMSTANCE SHALL THIS PROVISION BE MODIFIED BY ANY " +
+  "CONTRARY TERM OR CONDITION CONTAINED IN ANY PURCHASER REQUEST FOR PROPOSAL, ORDER FORM, PURCHASE ORDER OR " +
+  "SIMILAR DOCUMENT UNLESS NEGOTIATED, SUPPORTED BY A SEPARATE CONSIDERATION, AGREED TO IN WRITING AND SIGNED " +
+  "BY BOTH PURCHASER AND TORK SYSTEMS, INC.";
+
+/**
+ * Laid out as a copy of the pick list SAP prints (sample: SO T 36679), at the
+ * warehouse's request, so the phone sheet and the office sheet read the same.
+ */
+function PicklistDocument({ picklist }: { picklist: PicklistResult }) {
   // Closed lines have already shipped — they'd only pad the printout.
   const openLines = picklist.lines.filter((l) => !l.closed);
-
-  // An item can sit on several SO lines (different quantities, same part). The
-  // receipt qty is per item, not per line, so attribute it to the first line
-  // that came off this PO rather than repeating it and implying a bigger receipt.
-  const receiptShown = new Set<string>();
-  const receiptFor = (line: PicklistLine): number | null => {
-    if (!line.fromThisPo) return null;
-    if (receiptShown.has(line.itemCode)) return null;
-    const qty = receivedByItem[line.itemCode];
-    if (!qty) return null;
-    receiptShown.add(line.itemCode);
-    return qty;
-  };
+  const soLabel = [picklist.soSeriesPrefix, picklist.soNumber].filter(Boolean).join(" ");
+  const zoom = useFitZoom(SHEET_WIDTH_PX);
 
   return (
-    <div className="picklist-print p-4 max-w-3xl mx-auto text-text">
-      {/* Header */}
-      <div className="border-b-2 border-text pb-3 mb-3">
-        <div className="flex justify-between items-center gap-4">
+    <div
+      className="picklist-print mx-auto p-4 text-text text-[11px] leading-snug"
+      style={{ width: SHEET_WIDTH_PX, zoom }}
+    >
+      {/* Header: logo + small print | PICK LIST + order numbers */}
+      <div className="flex justify-between items-start gap-3 mb-4">
+        <div className="flex items-start gap-3">
           <div>
-            <h1 className="text-xl font-bold">PICKLIST</h1>
-            <p className="text-sm">
-              Sales Order <span className="font-bold">{picklist.soNumber}</span>
-            </p>
+            <img
+              src={`${import.meta.env.BASE_URL}tork-logo.png`}
+              alt="Tork Systems"
+              className="h-14 w-auto"
+            />
+            <p className="mt-1 text-[10px]">VISIT US AT: www.torksystems.com</p>
           </div>
-          <img
-            src={`${import.meta.env.BASE_URL}tork-logo.png`}
-            alt="Tork Systems"
-            className="h-12 w-auto"
-          />
+          <div className="text-[8px] leading-tight pt-1">
+            {BRAND_TAGLINES.map((t) => (
+              <p key={t}>{t}</p>
+            ))}
+          </div>
+        </div>
+        <div className="text-right">
+          <h1 className="text-2xl tracking-wide mb-1">PICK LIST</h1>
+          <Pair label="Sales Order #:" value={soLabel} />
+          <Pair label="Customer PO:" value={picklist.customerPO} />
+          <Pair label="Order Date:" value={formatDate(picklist.orderDate)} />
         </div>
       </div>
 
-      {/* Order facts */}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs mb-4">
-        <Field label="Customer" value={picklist.customerName} />
-        <Field label="Customer PO" value={picklist.customerPO} />
-        <Field label="Ship To" value={picklist.shipToCode} />
-        <Field label="Due Date" value={formatDate(picklist.dueDate)} />
-        <Field label="Ship Speed" value={picklist.shipSpeed} />
-        <Field label="Ship Via" value={picklist.shipVia} />
-        <Field label="Freight Terms" value={picklist.freightTerms} />
-        {(picklist.insideSales || picklist.outsideSales) && (
-          <Field
-            label="I.S / O.S"
-            value={`${picklist.insideSales || "—"} / ${picklist.outsideSales || "—"}`}
-          />
-        )}
-        {picklist.vesselJob && <Field label="Vessel / Job" value={picklist.vesselJob} />}
-        {picklist.shipToAddress && (
-          <div className="col-span-2">
-            <span className="text-text-secondary">Address: </span>
-            <span className="whitespace-pre-line">{picklist.shipToAddress}</span>
-          </div>
-        )}
+      {/* Customer | Tork contact */}
+      <div className="grid grid-cols-2 gap-4 mb-3">
+        <Labelled label="CUSTOMER:">{picklist.customerName}</Labelled>
+        <Labelled label="TORK CONTACT:">
+          {[picklist.insideSales, picklist.contactEmail, picklist.contactPhone]
+            .filter(Boolean)
+            .map((l) => (
+              <p key={l}>{l.toUpperCase()}</p>
+            ))}
+        </Labelled>
+      </div>
+
+      <div className="mb-3">
+        <Labelled label="VESSEL/JOB:">{picklist.vesselJob}</Labelled>
+      </div>
+
+      {/* Ship to | how it ships | freight */}
+      <div className="grid grid-cols-[1.3fr_1fr_1fr] gap-3 mb-3">
+        <Labelled label="SHIP TO:">
+          <p>{picklist.shipToCode}</p>
+          <p className="whitespace-pre-line">{picklist.shipToAddress}</p>
+        </Labelled>
+        <div>
+          <Pair label="SHIP VIA:" value={picklist.shipVia} />
+          <Pair label="SHIP SPEED:" value={picklist.shipSpeed} />
+          <Pair label="FOB:" value={picklist.fob.toUpperCase()} />
+        </div>
+        <div>
+          <Pair label="FREIGHT TERMS:" value={picklist.freightTermsCode} />
+          <Pair label="ACCOUNT:" value={picklist.freightAccount} />
+          <Pair label="TRACKING/POD:" value={picklist.tracking} />
+        </div>
       </div>
 
       {/* Lines */}
-      <table className="w-full text-xs border-collapse">
+      <table className="w-full border-collapse">
         <thead>
           <tr className="border-b-2 border-text text-left">
-            <th className="py-1 pr-1 font-semibold w-6">#</th>
-            <th className="py-1 pr-2 font-semibold">Item</th>
-            <th className="py-1 px-1 font-semibold text-center w-10">Whs</th>
-            <th className="py-1 px-1 font-semibold text-center w-10">Ord</th>
-            <th className="py-1 px-1 font-semibold text-center w-12">Recv</th>
-            <th className="py-1 pl-1 font-semibold text-center w-14">On Hand</th>
+            <th className="py-1 pr-1 font-semibold w-8">Line</th>
+            <th className="py-1 pr-2 font-semibold w-24">Part Number</th>
+            <th className="py-1 pr-2 font-semibold">Description</th>
+            <th className="py-1 px-1 font-semibold text-right w-14">Ordered</th>
+            <th className="py-1 px-1 font-semibold text-center w-10">UoM</th>
+            <th className="py-1 pl-1 font-semibold text-center w-20">Shipped</th>
           </tr>
         </thead>
         <tbody>
-          {openLines.map((line) => {
-            const received = receiptFor(line);
-            const onHand = line.onHandAtWarehouse;
-            const canPick = onHand !== null && onHand >= line.openQty && line.openQty > 0;
-
-            return (
-              <tr
-                key={line.lineNum}
-                className={`border-b border-border align-top ${
-                  line.fromThisPo ? "bg-blue-50 print:bg-transparent" : ""
-                }`}
-              >
-                <td className="py-1.5 pr-1 text-text-secondary">
-                  {line.customerLineNo || line.lineNum + 1}
-                </td>
-                <td className="py-1.5 pr-2">
-                  <p className="font-semibold">{line.itemCode}</p>
-                  <p className="text-text-secondary leading-tight">{line.itemDescription}</p>
-                  {(line.serial || line.tag || line.customerPartNo) && (
-                    <p className="text-text-secondary leading-tight">
-                      {[
-                        line.customerPartNo && `Cust P/N ${line.customerPartNo}`,
-                        line.serial && `S/N ${line.serial}`,
-                        line.tag && `Tag ${line.tag}`,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                  )}
-                  {/* Where else the part sits, when the line's own warehouse can't cover it. */}
-                  {!canPick && line.stockByWarehouse.some((w) => w.inStock > 0) && (
-                    <p className="text-text-secondary leading-tight">
-                      Stock:{" "}
-                      {line.stockByWarehouse
-                        .filter((w) => w.inStock > 0)
-                        .map((w) => `${w.warehouse}=${w.inStock}`)
-                        .join(", ")}
-                    </p>
-                  )}
-                </td>
-                <td className="py-1.5 px-1 text-center">{line.warehouse}</td>
-                <td className="py-1.5 px-1 text-center">{line.orderedQty}</td>
-                <td className="py-1.5 px-1 text-center font-semibold text-success print:text-text">
-                  {received ?? "—"}
-                </td>
-                <td className="py-1.5 pl-1 text-center">
-                  {onHand === null ? "?" : onHand}
-                </td>
-              </tr>
-            );
-          })}
+          {openLines.map((line) => (
+            <tr key={line.lineNum} className="border-b border-border align-top">
+              <td className="py-1.5 pr-1">{line.lineNum + 1}</td>
+              <td className="py-1.5 pr-2">{line.itemCode}</td>
+              <td className="py-1.5 pr-2">
+                <p className="font-semibold">{line.itemDescription}</p>
+                {line.freeText && <p className="italic">Note: {line.freeText}</p>}
+              </td>
+              <td className="py-1.5 px-1 text-right">{line.orderedQty}</td>
+              <td className="py-1.5 px-1 text-center">{line.uom}</td>
+              <td className="py-1.5 pl-1 align-bottom">
+                <div className="border-b border-text h-4" />
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
 
       {openLines.length === 0 && (
         <p className="text-sm text-text-secondary py-4 text-center">
-          Every line on SO {picklist.soNumber} is already closed.
+          Every line on SO {soLabel} is already closed.
         </p>
       )}
 
-      {/* Footnotes */}
-      {/* Footer — the warehouse asked for the explanatory notes to come off the sheet. */}
-      <div className="mt-4 pt-2 border-t border-border text-xs text-text-secondary flex flex-col gap-1">
-        <div className="hidden print:flex gap-8 pt-6 text-text">
-          <span>Picked by: ______________________</span>
-          <span>Date: ______________</span>
+      {/* Important info */}
+      <div className="mt-3 p-2 rounded border border-border min-h-10">
+        <span className="font-semibold">Important Info: </span>
+        <span className="whitespace-pre-line">{picklist.importantInfo}</span>
+      </div>
+
+      {/* Small print | received by */}
+      <div className="mt-6 grid grid-cols-[2.4fr_1fr] gap-3 items-start">
+        <p className="text-[6.5px] leading-tight p-2 border border-border">
+          {LIMITATION_OF_LIABILITY}
+        </p>
+        <div className="text-[10px]">
+          <p className="font-semibold mb-1">Received By</p>
+          {["Name:", "Date:", "Signature:"].map((l) => (
+            <div key={l} className="flex items-end gap-1 mb-1.5">
+              <span className="w-14">{l}</span>
+              <div className="flex-1 border-b border-text h-3" />
+            </div>
+          ))}
         </div>
+      </div>
+
+      {/* Company footer */}
+      <div className="mt-4 text-center text-[10px] font-semibold flex flex-col gap-1">
+        <p>
+          TORK SYSTEMS, INC. &nbsp;|&nbsp; experts@torksystems.com &nbsp;|&nbsp; (800) 867-5514
+          &nbsp;|&nbsp; www.torksystems.com
+        </p>
+        <p>
+          TORK SYSTEMS, INC, PO Box 350117 Jacksonville, Florida 32235 &nbsp; (510) 891-9675
+          &nbsp; office@torksystems.com
+        </p>
       </div>
     </div>
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
-  if (!value) return null;
+/**
+ * The sheet is laid out at the printable width of a letter page (8.5in less
+ * 0.5in margins, at 96px/in) so the screen shows exactly what prints. On a
+ * phone that is wider than the screen, so it is shrunk to fit; print resets
+ * the zoom (app.css).
+ */
+const SHEET_WIDTH_PX = 720;
+
+function useFitZoom(width: number): number {
+  const fit = () => Math.min(1, window.innerWidth / width);
+  const [zoom, setZoom] = useState(fit);
+  useEffect(() => {
+    const onResize = () => setZoom(fit());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [width]);
+  return zoom;
+}
+
+/** SAP-style "LABEL:  value" with the value block beside the label. */
+function Labelled({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div>
-      <span className="text-text-secondary">{label}: </span>
-      <span className="font-medium">{value}</span>
+    <div className="flex gap-2">
+      <span className="font-semibold shrink-0">{label}</span>
+      <div>{children}</div>
     </div>
   );
 }
 
+function Pair({ label, value }: { label: string; value: string }) {
+  return (
+    <p>
+      <span className="font-semibold">{label}</span> {value}
+    </p>
+  );
+}
+
+/**
+ * SAP dates arrive as UTC midnight ("2026-09-17T00:00:00Z"). Formatting that in
+ * California local time rolls it back a day, so read it as UTC.
+ */
 function formatDate(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
-  return isNaN(d.getTime()) ? "" : d.toLocaleDateString();
+  return isNaN(d.getTime())
+    ? ""
+    : d.toLocaleDateString("en-US", { timeZone: "UTC", month: "numeric", day: "numeric", year: "2-digit" });
 }
