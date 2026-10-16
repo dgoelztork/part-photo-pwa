@@ -2,12 +2,12 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSessionStore } from "../../stores/session-store";
 import { CONDITION_LABELS, type ReceivingSession } from "../../types/session";
-import { postGRPO, patchGrpoDocsUrl } from "../../services/api-client";
+import { postGRPO } from "../../services/api-client";
 import {
-  uploadReceivingSessionToSharePoint,
   type ReceivingUploadResult,
   type UploadProgress,
 } from "../../lib/file-exporter";
+import { hasPhotoBytes, sendSessionPhotos } from "../../lib/photo-resend";
 import { TailscaleHint } from "../../components/TailscaleHint";
 import { PicklistView } from "./PicklistView";
 
@@ -72,25 +72,6 @@ function buildGrpoDetails(session: ReceivingSession): string {
   return sections.join("\n");
 }
 
-/**
- * Does this session still hold the photo bytes?
- *
- * Receipts submitted before photos were persisted come back with empty blobs,
- * and so do ones whose upload is confirmed done. Offering "upload the photos"
- * when there is nothing left to send would be a button that can only fail.
- */
-function hasPhotoBytes(session: ReceivingSession): boolean {
-  const any = (photos: { blob: Blob }[]) => photos.some((p) => p.blob && p.blob.size > 0);
-  return (
-    session.boxes.some((b) => any(b.labelPhotos) || any(b.damagePhotos)) ||
-    any(session.packingSlipPhotos) ||
-    session.documents.some((d) => d.photo.blob && d.photo.blob.size > 0) ||
-    session.lineItems.some(
-      (l) => any(l.photos) || any(l.nameplatePhotos) || any(l.quantityPhotos)
-    )
-  );
-}
-
 export function ReviewSubmit() {
   const session = useSessionStore((s) => s.getActiveSession());
   const goToStep = useSessionStore((s) => s.goToStep);
@@ -135,40 +116,18 @@ export function ReviewSubmit() {
    */
   const runUpload = async (docEntry: number | null) => {
     setUploading(true);
-    let outcome: ReceivingUploadResult | null = null;
+    let result: Awaited<ReturnType<typeof sendSessionPhotos>> = null;
     try {
-      outcome = await uploadReceivingSessionToSharePoint(session, setUploadProgress);
-      setUploadResult(outcome);
-    } catch (err) {
-      setUploadResult({
-        uploaded: 0,
-        webImagesUploaded: 0,
-        failed: [{
-          filename: "(upload aborted)",
-          error: err instanceof Error ? err.message : String(err),
-          destination: "receiving",
-        }],
-        folder: "",
-      });
+      result = await sendSessionPhotos(session, docEntry, setUploadProgress);
     } finally {
       setUploadProgress(null);
       setUploading(false);
     }
-
-    if (docEntry !== null && outcome?.folderUrl && outcome.uploaded > 0) {
-      try {
-        await patchGrpoDocsUrl(docEntry, outcome.folderUrl);
-      } catch (err) {
-        console.warn("[ReviewSubmit] Failed to stamp U_GRPODocs:", err);
-      }
-    }
-
-    // Only a clean run counts. A partial upload leaves the phone holding the
-    // only copy of what didn't make it.
-    const clean =
-      !!outcome && outcome.uploaded > 0 &&
-      outcome.failed.filter((f) => f.destination === "receiving").length === 0;
-    setPhotosUploaded(clean);
+    // null: the dashboard's automatic resend already has this receipt in hand,
+    // and it records the outcome itself.
+    if (!result) return;
+    setUploadResult(result.outcome);
+    setPhotosUploaded(result.clean);
   };
 
   const handleSubmit = async () => {

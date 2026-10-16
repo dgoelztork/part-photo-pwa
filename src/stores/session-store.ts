@@ -30,6 +30,8 @@ interface SessionStore {
   /** Record whether the photos reached SharePoint. Gates the retry prompt and
    *  whether the phone keeps carrying the photo bytes. */
   setPhotosUploaded: (uploaded: boolean) => void;
+  /** Same, for a session that isn't the active one — the dashboard's resend. */
+  setPhotosUploadedFor: (id: string, uploaded: boolean) => void;
   goToStep: (step: SessionStatus) => void;
 
   // BOX step (per-box shipping labels and per-box damage)
@@ -213,6 +215,14 @@ export const useSessionStore = create<SessionStore>()(
       setPhotosUploaded: (uploaded: boolean) => {
         set((state) => ({
           sessions: updateSession(state.sessions, state.activeSessionId, () => ({
+            photosUploaded: uploaded,
+          })),
+        }));
+      },
+
+      setPhotosUploadedFor: (id: string, uploaded: boolean) => {
+        set((state) => ({
+          sessions: updateSession(state.sessions, id, () => ({
             photosUploaded: uploaded,
           })),
         }));

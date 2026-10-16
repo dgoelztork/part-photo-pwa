@@ -6,6 +6,15 @@ import { getProxyUrl, setProxyUrl, checkProxyHealth, fetchPrinters, fetchPhotoAu
 import { TailscaleHint } from "../components/TailscaleHint";
 import type { ReceivingSession } from "../types/session";
 import { STEP_LABELS } from "../types/session";
+import { needsPhotoResend, sendSessionPhotos } from "../lib/photo-resend";
+import type { UploadProgress } from "../lib/file-exporter";
+
+/**
+ * True while the automatic resend is working through its list. Module-level,
+ * not component state: the receiver can leave the dashboard and come back
+ * mid-run, and a second pass over the same receipts would upload them twice.
+ */
+let resendRunning = false;
 
 /**
  * GRPO numbers whose missing photos have been seen and acknowledged.
@@ -42,7 +51,7 @@ function writeAcknowledged(docNums: number[]): void {
 
 export function Dashboard() {
   const { userName, signOut } = useAuthStore();
-  const { sessions, createSession, resumeSession, deleteSession } = useSessionStore();
+  const { sessions, createSession, resumeSession, deleteSession, setPhotosUploadedFor } = useSessionStore();
   const navigate = useNavigate();
   const [showSettings, setShowSettings] = useState(false);
   const [proxyUrlInput, setProxyUrlInput] = useState(getProxyUrl());
@@ -75,6 +84,53 @@ export function Dashboard() {
       })
       .catch((err) => console.warn("[Dashboard] Photo audit unavailable:", err));
   }, []);
+
+  // Photos that never finished sending, still on this phone. The "Upload the
+  // photos" button on each receipt only helps if someone goes back to it, and
+  // nobody does — so the dashboard sends them itself, one receipt at a time.
+  const [resend, setResend] = useState<{
+    label: string;
+    index: number;
+    total: number;
+    progress: UploadProgress | null;
+  } | null>(null);
+  const [resendDone, setResendDone] = useState<{ sent: string[]; failed: string[] } | null>(null);
+
+  useEffect(() => {
+    const run = async () => {
+      if (resendRunning) return;
+      const pending = useSessionStore.getState().sessions.filter(needsPhotoResend);
+      if (pending.length === 0) return;
+      resendRunning = true;
+      const sent: string[] = [];
+      const failed: string[] = [];
+      try {
+        for (let i = 0; i < pending.length; i++) {
+          const s = pending[i];
+          const label = s.poNumber ? `PO ${s.poNumber}` : "a receipt";
+          setResend({ label, index: i + 1, total: pending.length, progress: null });
+          const result = await sendSessionPhotos(s, s.grpoDocEntry ?? null, (p) =>
+            setResend((prev) => (prev ? { ...prev, progress: p } : prev)),
+          );
+          // null: that receipt is already uploading from its own screen.
+          if (!result) continue;
+          setPhotosUploadedFor(s.id, result.clean);
+          (result.clean ? sent : failed).push(label);
+        }
+      } finally {
+        resendRunning = false;
+        setResend(null);
+        setResendDone({ sent, failed });
+      }
+    };
+    // Sessions come back from IndexedDB after the first render. Checking
+    // before then would always find nothing to send.
+    if (useSessionStore.persist.hasHydrated()) {
+      void run();
+      return;
+    }
+    return useSessionStore.persist.onFinishHydration(() => void run());
+  }, [setPhotosUploadedFor]);
 
   const handleCheckProxy = async () => {
     setProxyUrl(proxyUrlInput);
@@ -136,6 +192,60 @@ export function Dashboard() {
           Sign out
         </button>
       </div>
+
+      {/* Resending photos from earlier receipts. Same warning as the submit
+          screen: the phone stops the page when it locks or is switched away. */}
+      {resend && (
+        <div className="p-4 rounded-xl bg-green-50 border border-green-200 animate-slide-in">
+          <p className="text-sm font-semibold text-text">
+            Sending photos that didn't finish earlier
+          </p>
+          <p className="text-xs text-text-secondary mt-1">
+            {resend.label}
+            {resend.total > 1 ? ` (receipt ${resend.index} of ${resend.total})` : ""}
+            {resend.progress ? ` · photo ${resend.progress.current} of ${resend.progress.total}` : ""}
+          </p>
+          {resend.progress && (
+            <div className="h-2 rounded-full bg-green-100 overflow-hidden mt-2">
+              <div
+                className="h-full bg-success transition-all duration-300"
+                style={{
+                  width: `${Math.round((resend.progress.current / Math.max(1, resend.progress.total)) * 100)}%`,
+                }}
+              />
+            </div>
+          )}
+          <p className="text-xs text-error mt-2 font-medium">
+            Keep this screen open until it finishes.
+          </p>
+        </div>
+      )}
+
+      {!resend && resendDone && (resendDone.sent.length > 0 || resendDone.failed.length > 0) && (
+        <div
+          className={`p-4 rounded-xl border animate-slide-in ${
+            resendDone.failed.length > 0 ? "bg-amber-50 border-amber-300" : "bg-green-50 border-green-200"
+          }`}
+        >
+          {resendDone.sent.length > 0 && (
+            <p className="text-sm text-text">
+              Sent the photos for {resendDone.sent.join(", ")}.
+            </p>
+          )}
+          {resendDone.failed.length > 0 && (
+            <p className="text-sm text-text mt-1">
+              Couldn't send the photos for {resendDone.failed.join(", ")}. They're still on
+              this phone, and the app will try again next time it opens.
+            </p>
+          )}
+          <button
+            onClick={() => setResendDone(null)}
+            className="mt-2 text-xs text-text-secondary underline"
+          >
+            OK
+          </button>
+        </div>
+      )}
 
       {/* Photos that never made it. Deliberately loud and deliberately at the
           top: this failure hid for two months because nothing surfaced it. */}
