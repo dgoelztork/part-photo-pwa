@@ -59,6 +59,9 @@ export function Dashboard() {
   // Label printing only appears once printers are configured on the proxy.
   // Until then the button would lead to a dead end for a receiver, so hide it.
   const [hasPrinters, setHasPrinters] = useState(false);
+  // How many earlier receipts to list. Receivers come back to old ones to add
+  // photos, so the list grows on request rather than stopping at a fixed count.
+  const [olderShown, setOlderShown] = useState(10);
 
   // Receipts whose photos never landed. Silent by nature — the phone that
   // failed can't report it — so the dashboard asks SAP on every open.
@@ -398,7 +401,7 @@ export function Dashboard() {
         <div>
           <h2 className="text-sm font-medium text-text-secondary mb-2">Previous</h2>
           <div className="flex flex-col gap-2">
-            {olderSessions.slice(0, 10).map((s) => (
+            {olderSessions.slice(0, olderShown).map((s) => (
               <SessionCard
                 key={s.id}
                 session={s}
@@ -406,6 +409,14 @@ export function Dashboard() {
                 onDelete={(e) => handleDelete(e, s.id)}
               />
             ))}
+            {olderSessions.length > olderShown && (
+              <button
+                onClick={() => setOlderShown((n) => n + 20)}
+                className="py-3 text-sm font-medium text-primary"
+              >
+                Show more ({olderSessions.length - olderShown} older)
+              </button>
+            )}
           </div>
         </div>
       )}
