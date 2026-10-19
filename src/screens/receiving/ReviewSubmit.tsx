@@ -8,6 +8,7 @@ import {
   type UploadProgress,
 } from "../../lib/file-exporter";
 import { hasPhotoBytes, sendSessionPhotos } from "../../lib/photo-resend";
+import { HOME_WAREHOUSES, receiptWarehouse } from "../../lib/home-warehouse";
 import { TailscaleHint } from "../../components/TailscaleHint";
 import { PicklistView } from "./PicklistView";
 
@@ -147,12 +148,11 @@ export function ReviewSubmit() {
             quantity: l.receivedQty,
             // Carry the PO line's warehouse (POR1.WarehouseCode) so receipts
             // post to the correct site — Pascagoula POs land in Pascagoula,
-            // not a hardcoded default. Fallback covers sessions that were
-            // already in-flight before this field existed (all warehouse-01).
-            // "S" (Stock PO Warehouse) only marks a PO as stock replenishment;
-            // the goods are shelved in 01, which is also what receipts keyed
-            // straight into SAP do with S lines.
-            warehouse: !l.warehouse || l.warehouse === "S" ? "01" : l.warehouse,
+            // not a hardcoded default. "S" (Stock PO Warehouse) only marks a
+            // PO as stock replenishment, and a blank comes from sessions begun
+            // before this field existed; both go to this phone's own
+            // warehouse, which is where the goods physically are.
+            warehouse: receiptWarehouse(l.warehouse),
           }));
 
         const grpoDetails = buildGrpoDetails(session);
@@ -340,6 +340,20 @@ export function ReviewSubmit() {
           </div>
         ))}
       </div>
+
+      {/* Where this receipt will land, shown before it posts. With two sites
+          on the app, a phone left on the wrong one would otherwise be
+          invisible until someone went looking for stock. */}
+      {!isSubmitted && confirmedLines.length > 0 && (() => {
+        const names = [...new Set(confirmedLines.map((l) => receiptWarehouse(l.warehouse)))].map(
+          (code) => HOME_WAREHOUSES.find((w) => w.code === code)?.name ?? `warehouse ${code}`,
+        );
+        return (
+          <p className="text-sm text-text text-center">
+            Receiving into: <span className="font-semibold">{names.join(" and ")}</span>
+          </p>
+        );
+      })()}
 
       {/* Stats */}
       <p className="text-xs text-text-secondary text-center">

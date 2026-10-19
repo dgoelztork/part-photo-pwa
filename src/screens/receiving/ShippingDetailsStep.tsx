@@ -3,6 +3,7 @@ import { useSessionStore } from "../../stores/session-store";
 import { StepHeader } from "../../components/layout/StepHeader";
 import { StepNavigation } from "../../components/layout/StepNavigation";
 import { getFedexRate, getUpsRate, UnknownShippingSpeedError } from "../../services/api-client";
+import { getHomeWarehouse } from "../../lib/home-warehouse";
 import { TailscaleHint } from "../../components/TailscaleHint";
 import type { ShippingBox } from "../../types/session";
 
@@ -164,7 +165,10 @@ function RateRow({
   const isFedex = carrier ? carrier === "FedEx" : transp.includes("FEDEX");
   const carrierName = isUps ? "UPS" : isFedex ? "FedEx" : null;
   const originZip = (box.shipFromZip ?? "").match(/\d{5}/)?.[0] ?? "";
-  const destZip = (sd?.shipToZip ?? "").match(/\d{5}/)?.[0] ?? "";
+  // The label's ship-to ZIP when it shows one; otherwise the box came to this
+  // phone's own warehouse. Without the fallback a label with no ZIP got no
+  // price at all.
+  const destZip = (sd?.shipToZip ?? "").match(/\d{5}/)?.[0] ?? getHomeWarehouse().zip;
   const weightNum = parseFloat((box.weight ?? "").match(/(\d+(?:\.\d+)?)/)?.[1] ?? "");
   const speed = sd?.shipSpeed ?? "";
 

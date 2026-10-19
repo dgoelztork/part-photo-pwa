@@ -8,6 +8,7 @@ import type { ReceivingSession } from "../types/session";
 import { STEP_LABELS } from "../types/session";
 import { needsPhotoResend, sendSessionPhotos } from "../lib/photo-resend";
 import type { UploadProgress } from "../lib/file-exporter";
+import { HOME_WAREHOUSES, getHomeWarehouse, setHomeWarehouse } from "../lib/home-warehouse";
 
 /**
  * True while the automatic resend is working through its list. Module-level,
@@ -55,6 +56,7 @@ export function Dashboard() {
   const navigate = useNavigate();
   const [showSettings, setShowSettings] = useState(false);
   const [proxyUrlInput, setProxyUrlInput] = useState(getProxyUrl());
+  const [homeWarehouse, setHomeWarehouseState] = useState(() => getHomeWarehouse().code);
   const [proxyStatus, setProxyStatus] = useState<"idle" | "checking" | "ok" | "error">("idle");
   // Label printing only appears once printers are configured on the proxy.
   // Until then the button would lead to a dead end for a receiver, so hide it.
@@ -187,6 +189,24 @@ export function Dashboard() {
         <div>
           <h1 className="text-xl font-bold text-text">Receiving</h1>
           <p className="text-sm text-text-secondary">{userName}</p>
+          {/* Out in the open rather than under Settings: it decides where
+              stock-order lines post, so a phone on the wrong site should be
+              obvious at a glance. */}
+          <label className="text-sm text-text-secondary flex items-center gap-1 mt-0.5">
+            Warehouse:
+            <select
+              value={homeWarehouse}
+              onChange={(e) => {
+                setHomeWarehouse(e.target.value);
+                setHomeWarehouseState(e.target.value);
+              }}
+              className="bg-transparent font-medium text-text"
+            >
+              {HOME_WAREHOUSES.map((w) => (
+                <option key={w.code} value={w.code}>{w.name}</option>
+              ))}
+            </select>
+          </label>
         </div>
         <button
           onClick={signOut}
