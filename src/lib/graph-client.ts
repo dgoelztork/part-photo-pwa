@@ -138,8 +138,26 @@ async function getSharePointDriveId(): Promise<string> {
   return drive.id;
 }
 
-/** Ensure all folders along `folderPath` (relative to the drive root) exist. */
-async function ensureSharePointFolder(driveId: string, folderPath: string): Promise<void> {
+/** Folders already confirmed this page load, keyed by drive + path. Holds the
+ *  in-flight promise, not just a flag, so uploads running side by side share one
+ *  check instead of racing to create the same folder (the create uses "fail"). */
+const ensuredFolders = new Map<string, Promise<void>>();
+
+/** Ensure all folders along `folderPath` (relative to the drive root) exist.
+ *  Checked once per folder: re-walking the whole path before every file cost
+ *  about five extra round trips per photo, which made a 31-line receipt crawl. */
+function ensureSharePointFolder(driveId: string, folderPath: string): Promise<void> {
+  const key = `${driveId}|${folderPath}`;
+  let pending = ensuredFolders.get(key);
+  if (!pending) {
+    pending = walkSharePointFolder(driveId, folderPath);
+    ensuredFolders.set(key, pending);
+    pending.catch(() => ensuredFolders.delete(key));
+  }
+  return pending;
+}
+
+async function walkSharePointFolder(driveId: string, folderPath: string): Promise<void> {
   const segments = folderPath.split("/").filter(Boolean);
   let parent = "";
   for (const segment of segments) {

@@ -7,6 +7,10 @@ import type { CapturedPhoto } from "../types";
 import type { ReceivingSession, CapturedPhoto as SessionPhoto } from "../types/session";
 import JSZip from "jszip";
 
+/** SharePoint uploads in flight at once. Enough to stop a big receipt crawling,
+ *  few enough that a phone on warehouse Wi-Fi is not flooded. */
+const SHAREPOINT_PARALLEL = 4;
+
 export interface UploadProgress {
   current: number;
   total: number;
@@ -301,9 +305,21 @@ export async function uploadReceivingSessionToSharePoint(
   let uploaded = 0;
   let webImagesUploaded = 0;
 
-  for (let i = 0; i < entries.length; i++) {
-    const entry = entries[i];
-    onProgress?.({ current: i + 1, total: entries.length, fileName: entry.filename });
+  // Several files at once: one at a time made a 31-line receipt take long
+  // enough that the receiver gave up. Files asking for the same name share a
+  // queue, so two "rename" uploads of one part never race for "M106412.jpg".
+  const queues = new Map<string, UploadEntry[]>();
+  for (const entry of entries) {
+    const key = `${entry.folder}/${entry.filename}`;
+    const q = queues.get(key);
+    if (q) q.push(entry);
+    else queues.set(key, [entry]);
+  }
+  const lanes = [...queues.values()];
+  let started = 0;
+
+  const sendOne = async (entry: UploadEntry) => {
+    onProgress?.({ current: ++started, total: entries.length, fileName: entry.filename });
     try {
       const savedAs = await uploadFileToSharePoint(
         entry.folder,
@@ -325,7 +341,14 @@ export async function uploadReceivingSessionToSharePoint(
         destination: entry.destination,
       });
     }
-  }
+  };
+
+  const worker = async () => {
+    for (let lane = lanes.shift(); lane; lane = lanes.shift()) {
+      for (const entry of lane) await sendOne(entry);
+    }
+  };
+  await Promise.all(Array.from({ length: SHAREPOINT_PARALLEL }, worker));
 
   // A second copy into Azure Blob — the warehouse Tork owns outright. SharePoint
   // stays the place the warehouse works from; this is the copy every other tool
