@@ -9,6 +9,7 @@ import {
   pingFeedbackStore,
   updateFeedbackStatus,
 } from "../services/feedback-store.js";
+import { sendFeedbackMail } from "../services/feedback-mail.js";
 
 const router = Router();
 
@@ -116,6 +117,8 @@ router.post("/", (req, res) => {
         `on ${row.page ?? "/"}${photoDataUrl ? " with photo" : ""}: ${row.title}`
     );
     res.status(201).json(row);
+    // After the reply, so the receiver is never kept waiting on email.
+    void sendFeedbackMail(row, photoDataUrl);
   } catch (err) {
     console.error("[Feedback] Insert failed:", err);
     res.status(500).json({
