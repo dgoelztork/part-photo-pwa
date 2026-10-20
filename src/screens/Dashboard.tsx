@@ -6,7 +6,7 @@ import { getProxyUrl, setProxyUrl, checkProxyHealth, fetchPrinters, fetchPhotoAu
 import { TailscaleHint } from "../components/TailscaleHint";
 import type { ReceivingSession } from "../types/session";
 import { STEP_LABELS } from "../types/session";
-import { needsPhotoResend, sendSessionPhotos } from "../lib/photo-resend";
+import { needsPhotoResend, reportCutOffUploads, sendSessionPhotos } from "../lib/photo-resend";
 import type { UploadProgress } from "../lib/file-exporter";
 import { HOME_WAREHOUSES, getHomeWarehouse, setHomeWarehouse } from "../lib/home-warehouse";
 
@@ -104,6 +104,9 @@ export function Dashboard() {
   useEffect(() => {
     const run = async () => {
       if (resendRunning) return;
+      // Uploads the phone stopped last time, reported before anything new
+      // starts — a fresh upload would overwrite the note that records it.
+      reportCutOffUploads();
       const pending = useSessionStore.getState().sessions.filter(needsPhotoResend);
       if (pending.length === 0) return;
       resendRunning = true;
@@ -114,8 +117,11 @@ export function Dashboard() {
           const s = pending[i];
           const label = s.poNumber ? `PO ${s.poNumber}` : "a receipt";
           setResend({ label, index: i + 1, total: pending.length, progress: null });
-          const result = await sendSessionPhotos(s, s.grpoDocEntry ?? null, (p) =>
-            setResend((prev) => (prev ? { ...prev, progress: p } : prev)),
+          const result = await sendSessionPhotos(
+            s,
+            s.grpoDocEntry ?? null,
+            (p) => setResend((prev) => (prev ? { ...prev, progress: p } : prev)),
+            "auto",
           );
           // null: that receipt is already uploading from its own screen.
           if (!result) continue;

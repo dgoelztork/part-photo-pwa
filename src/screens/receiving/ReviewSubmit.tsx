@@ -116,11 +116,11 @@ export function ReviewSubmit() {
    * the retry prompt, and what tells the store it can stop carrying the photo
    * bytes on the phone.
    */
-  const runUpload = async (docEntry: number | null) => {
+  const runUpload = async (docEntry: number | null, trigger: "submit" | "button") => {
     setUploading(true);
     let result: Awaited<ReturnType<typeof sendSessionPhotos>> = null;
     try {
-      result = await sendSessionPhotos(session, docEntry, setUploadProgress);
+      result = await sendSessionPhotos(session, docEntry, setUploadProgress, trigger);
     } finally {
       setUploadProgress(null);
       setUploading(false);
@@ -208,7 +208,7 @@ export function ReviewSubmit() {
     // receipts lost their photos entirely. The receipt itself is already safe
     // in SAP by this point; what's at stake is the evidence, which only
     // exists on the phone until it lands.
-    await runUpload(postedDocEntry);
+    await runUpload(postedDocEntry, "submit");
 
     if (!poDocEntry) {
       // No SAP posting — just mark done after the upload attempt
@@ -476,7 +476,7 @@ export function ReviewSubmit() {
             reached SharePoint. They're still on this phone — send them now.
           </p>
           <button
-            onClick={() => void runUpload(session.grpoDocEntry ?? null)}
+            onClick={() => void runUpload(session.grpoDocEntry ?? null, "button")}
             className="mt-3 w-full py-3 rounded-xl bg-primary text-white font-semibold
                        active:scale-[0.98] transition-transform"
           >

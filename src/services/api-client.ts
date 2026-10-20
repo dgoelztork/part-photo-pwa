@@ -727,6 +727,36 @@ export async function saveFileCards(cards: FileCard[]): Promise<SaveFileCardsRes
   }
 }
 
+/** What the phone knows about a photo upload that failed or was cut off. */
+export interface UploadFailureReport {
+  /** "upload" (photos failed), "folder-link" (photos fine, SAP link failed),
+   *  or "cut-off" (found on the next open: the page was stopped mid-upload). */
+  step: "upload" | "folder-link" | "cut-off";
+  docNum?: number | null;
+  poNumber?: string;
+  sent?: number;
+  total?: number;
+  /** The page went to the background (screen locked, app switched) mid-upload. */
+  hidden: boolean;
+  reason?: string;
+  /** Which path ran the upload: "submit", "button" or "auto". */
+  trigger?: string;
+  secondsSinceStart?: number;
+}
+
+/**
+ * Tell the proxy an upload went wrong. Fire-and-forget: it never throws, never
+ * blocks, and a failure to report is only a console line. An older proxy
+ * without the route answers 404, which is ignored the same way.
+ */
+export function reportUploadFailure(report: UploadFailureReport): void {
+  void proxyFetch("/api/upload-fail", {
+    method: "POST",
+    body: JSON.stringify(report),
+    signal: AbortSignal.timeout(10000),
+  }).catch((err) => console.warn("[UploadFail] Could not report:", err));
+}
+
 // --- Azure Blob: the warehouse ------------------------------------------------
 
 export interface BlobUploadPermission {
