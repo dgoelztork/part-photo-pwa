@@ -4,6 +4,7 @@ import { StepHeader } from "../../components/layout/StepHeader";
 import { StepNavigation } from "../../components/layout/StepNavigation";
 import { getFedexRate, getUpsRate, UnknownShippingSpeedError } from "../../services/api-client";
 import { getHomeWarehouse } from "../../lib/home-warehouse";
+import { cleanTrackingNumber } from "../../lib/tracking-number";
 import { TailscaleHint } from "../../components/TailscaleHint";
 import type { ShippingBox } from "../../types/session";
 
@@ -117,7 +118,7 @@ function BoxCard({
       <Field
         label="Tracking Number"
         value={box.trackingNumber}
-        onChange={(v) => onChange({ trackingNumber: v })}
+        onChange={(v) => onChange({ trackingNumber: cleanTrackingNumber(v) })}
         placeholder="1Z..."
       />
       <Field

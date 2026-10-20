@@ -9,6 +9,7 @@ import {
 } from "../../lib/file-exporter";
 import { hasPhotoBytes, sendSessionPhotos } from "../../lib/photo-resend";
 import { HOME_WAREHOUSES, receiptWarehouse } from "../../lib/home-warehouse";
+import { cleanTrackingNumber } from "../../lib/tracking-number";
 import { TailscaleHint } from "../../components/TailscaleHint";
 import { PicklistView } from "./PicklistView";
 
@@ -44,7 +45,7 @@ function buildGrpoDetails(session: ReceivingSession): string {
   // Per-box breakdown — tracking, weight, origin ZIP, freight rate, damage per box.
   session.boxes.forEach((b, i) => {
     const parts = [
-      b.trackingNumber && `tracking=${b.trackingNumber}`,
+      b.trackingNumber && `tracking=${cleanTrackingNumber(b.trackingNumber)}`,
       b.weight && `weight=${b.weight}`,
       b.shipFromZip && `from=${b.shipFromZip}`,
       b.freightRate && `rate=$${b.freightRate}${b.freightRateLabel ? ` ${b.freightRateLabel}` : ""}`,
@@ -159,7 +160,9 @@ export function ReviewSubmit() {
         // Aggregate per-box freight + tracking for the GRPO header. Tracking
         // numbers concat (comma-separated), freight rates sum.
         const combinedTracking = session.boxes
-          .map((b) => b.trackingNumber.trim())
+          // Cleaned again here for sessions started before the entry points
+          // cleaned it, which would otherwise post the junk straight to SAP.
+          .map((b) => cleanTrackingNumber(b.trackingNumber))
           .filter(Boolean)
           .join(", ");
         const totalFreight = session.boxes.reduce((sum, b) => {

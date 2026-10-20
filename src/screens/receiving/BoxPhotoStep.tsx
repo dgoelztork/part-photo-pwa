@@ -6,6 +6,7 @@ import { CameraCapture } from "../../components/camera/CameraCapture";
 import { PhotoGallery } from "../../components/camera/PhotoGallery";
 import { extractShippingLabel } from "../../services/api-client";
 import { decodeShippingLabelBarcode } from "../../lib/barcode-reader";
+import { cleanTrackingNumber } from "../../lib/tracking-number";
 import type { CapturedPhoto, Carrier, ShippingBox } from "../../types/session";
 
 const CARRIER_OPTIONS: Array<{
@@ -90,7 +91,7 @@ export function BoxPhotoStep({ onBack }: BoxPhotoStepProps) {
         const carrier = barcodeHit?.carrier ?? ocrFields.carrier;
         const trackingNumber = barcodeHit?.trackingNumber ?? ocrFields.trackingNumber;
         const updates: Partial<ShippingBox> = { extracting: false };
-        if (trackingNumber) updates.trackingNumber = trackingNumber;
+        if (trackingNumber) updates.trackingNumber = cleanTrackingNumber(trackingNumber);
         if (ocrFields.weight) updates.weight = ocrFields.weight;
         if (ocrFields.shipFrom) updates.shipFromZip = ocrFields.shipFrom;
         updateShippingBox(boxId, updates);
