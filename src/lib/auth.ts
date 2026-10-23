@@ -4,11 +4,33 @@ import {
   type AccountInfo,
   InteractionRequiredAuthError,
 } from "@azure/msal-browser";
+import { Capacitor } from "@capacitor/core";
 import { MSAL_CONFIG, GRAPH_SCOPES, TENANT_DOMAIN_HINT } from "../config";
+import {
+  initNativeAuth,
+  getNativeAccount,
+  signInNative,
+  signOutNative,
+  getNativeAccessToken,
+} from "./auth-native";
+
+// Inside the native phone app MSAL cannot sign in (see auth-native.ts), so
+// every function below hands over to the native sign-in first. The browser
+// build never takes that path.
+const native = Capacitor.isNativePlatform();
+
+/** The two fields the app reads from an account, shaped like MSAL's. */
+function asAccount(a: { name?: string; username: string } | null): AccountInfo | null {
+  return a ? ({ name: a.name, username: a.username } as AccountInfo) : null;
+}
 
 let msalInstance: PublicClientApplication | null = null;
 
-export async function initAuth(): Promise<PublicClientApplication> {
+export async function initAuth(): Promise<PublicClientApplication | null> {
+  if (native) {
+    await initNativeAuth();
+    return null;
+  }
   if (msalInstance) return msalInstance;
 
   msalInstance = new PublicClientApplication(MSAL_CONFIG);
@@ -24,6 +46,7 @@ export async function initAuth(): Promise<PublicClientApplication> {
 }
 
 export function getAccount(): AccountInfo | null {
+  if (native) return asAccount(getNativeAccount());
   if (!msalInstance) return null;
   // Check active account first (set during login), then fall back to cached accounts
   const active = msalInstance.getActiveAccount();
@@ -37,7 +60,8 @@ export function getAccount(): AccountInfo | null {
 }
 
 export async function signIn(): Promise<AccountInfo | null> {
-  const msal = await initAuth();
+  if (native) return asAccount(await signInNative());
+  const msal = (await initAuth())!;
 
   // Use redirect flow on iOS (popups are blocked in standalone PWA mode)
   if (isIOSStandalone()) {
@@ -62,7 +86,8 @@ export async function signIn(): Promise<AccountInfo | null> {
 }
 
 export async function signOut(): Promise<void> {
-  const msal = await initAuth();
+  if (native) return signOutNative();
+  const msal = (await initAuth())!;
   const account = getAccount();
   if (account) {
     await msal.logoutPopup({ account }).catch(() => {
@@ -72,7 +97,8 @@ export async function signOut(): Promise<void> {
 }
 
 export async function getAccessToken(): Promise<string> {
-  const msal = await initAuth();
+  if (native) return getNativeAccessToken();
+  const msal = (await initAuth())!;
   const account = getAccount();
 
   if (!account) {

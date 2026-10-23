@@ -1,0 +1,74 @@
+# Builds the iPhone app on one of GitHub's Macs.
+#
+# Apple only allows iPhone apps to be built on a Mac, and Tork has none. This
+# proves the app builds, and leaves a copy that runs in Apple's iPhone
+# simulator. It is NOT signed, so it cannot go on a real phone. The signed
+# copy for real phones is ios-testflight.yml, which runs only by hand.
+#
+# Runs by hand (Actions -> Build iPhone app -> Run workflow), and on any push
+# that changes the app, so a change that breaks the iPhone build is caught the
+# day it is made rather than the day someone needs a new version.
+#
+# Mac time on a private repository counts ten times against the monthly free
+# allowance, so this stays narrow: one job, no matrix, cancelled if superseded.
+
+name: Build iPhone app
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/**"
+      - "ios/**"
+      - "package.json"
+      - "package-lock.json"
+      - "capacitor.config.ts"
+      - ".github/workflows/ios.yml"
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build the app
+        run: npm run build
+
+      - name: Copy it into the iPhone project
+        run: npx cap sync ios
+
+      - name: Build for the iPhone simulator
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package
+        run: |
+          cd build/Build/Products/Debug-iphonesimulator
+          zip -qr "$GITHUB_WORKSPACE/Receiving-simulator.zip" App.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Receiving-simulator
+          path: Receiving-simulator.zip
+          retention-days: 14

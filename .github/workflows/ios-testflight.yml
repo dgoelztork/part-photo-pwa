@@ -1,0 +1,175 @@
+# Builds a SIGNED iPhone app on one of GitHub's Macs and sends it to TestFlight.
+#
+# ios.yml proves the app still builds, on every change, with no signing. This
+# one makes a copy that goes on real phones. It runs only by hand
+# (Actions -> Send iPhone app to TestFlight -> Run workflow), because each run
+# uses a build number Apple will never accept again, and Mac time on a private
+# repository counts ten times against the monthly free allowance.
+#
+# Signing is done by Xcode itself, using an App Store Connect API key. With
+# -allowProvisioningUpdates Xcode creates the certificate and profile it needs
+# on Apple's side, so none are stored here. The key must have the Admin role,
+# or Apple refuses to make the distribution certificate.
+#
+# Needs these repository secrets (Settings -> Secrets and variables -> Actions):
+#   ASC_KEY_ID      the key's Key ID, from Users and Access -> Integrations
+#   ASC_ISSUER_ID   the Issuer ID shown above the list of keys
+#   ASC_KEY_P8      the full text of the downloaded AuthKey_XXXX.p8 file
+#   APPLE_TEAM_ID   TORK SYSTEMS INC's Team ID, from Membership details
+#
+# The app on TestFlight is com.torksystems.receiving. It must be registered in
+# App Store Connect (Apps -> + -> New App) before the first run, or the upload
+# is refused. Same Apple team and API key as the Outside Sales App.
+
+name: Send iPhone app to TestFlight
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Apple refuses uploads built with anything older than the iOS 26 SDK
+      # (Xcode 26), which is why this runs on macos-26 and not macos-15.
+      - name: Show the Xcode version
+        run: xcodebuild -version
+
+      - name: Install
+        run: npm ci
+
+      - name: Build the app
+        run: npm run build
+
+      - name: Copy it into the iPhone project
+        run: npx cap sync ios
+
+      # The IDs were pasted by hand and the first runs showed a Key ID of 11
+      # characters, not 10: a stray space or line break came with it. Apple's
+      # API forgave that; Xcode did not, and answered a bare 401. So strip
+      # every kind of whitespace once here, and every later step reads these.
+      # GitHub still hides the values in the log because they came from secrets.
+      - name: Tidy the pasted IDs
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for NAME in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID; do
+            VALUE=$(printf '%s' "${!NAME}" | tr -d ' \t\r\n')
+            echo "::add-mask::$VALUE"
+            echo "$NAME=$VALUE" >> "$GITHUB_ENV"
+          done
+
+      # The secret is pasted by hand on Windows, which can bring carriage
+      # returns, stray spaces or lost line breaks, and Xcode then rejects it
+      # as "invalidPEMDocument". So keep only the key's base64 body and write
+      # it back out in the exact shape Apple issued it: 64 characters a line
+      # between the BEGIN and END lines.
+      - name: Put the API key where Xcode can read it
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          KEY_FILE="$RUNNER_TEMP/asc/AuthKey_$ASC_KEY_ID.p8"
+          BODY=$(printf '%s' "$ASC_KEY_P8" \
+            | sed -e 's/-----BEGIN PRIVATE KEY-----//' -e 's/-----END PRIVATE KEY-----//' \
+            | tr -d ' \t\r\n')
+          {
+            echo "-----BEGIN PRIVATE KEY-----"
+            printf '%s' "$BODY" | fold -w 64
+            echo
+            echo "-----END PRIVATE KEY-----"
+          } > "$KEY_FILE"
+          # Proves the key now reads as a key, without printing any of it.
+          openssl pkey -in "$KEY_FILE" -noout && echo "API key reads correctly"
+
+      # Asks Apple directly whether the key, Key ID and Issuer ID belong
+      # together, before Xcode spends minutes building. Xcode's own message for
+      # a bad pairing is a bare 401; Apple's API says which part it rejected.
+      - name: Check Apple accepts the API key
+        run: |
+          pip3 install --quiet --break-system-packages pyjwt cryptography
+          TOKEN=$(python3 - <<'PY'
+          import os, time, jwt
+          key = open(os.path.join(os.environ["RUNNER_TEMP"], "asc", "AuthKey_" + os.environ["ASC_KEY_ID"] + ".p8")).read()
+          now = int(time.time())
+          print(jwt.encode(
+              {"iss": os.environ["ASC_ISSUER_ID"].strip(), "iat": now, "exp": now + 600, "aud": "appstoreconnect-v1"},
+              key, algorithm="ES256", headers={"kid": os.environ["ASC_KEY_ID"].strip(), "typ": "JWT"}))
+          PY
+          )
+          echo "Key ID is ${#ASC_KEY_ID} characters, Issuer ID is ${#ASC_ISSUER_ID} characters (expected 10 and 36)"
+          CODE=$(curl -s -o "$RUNNER_TEMP/asc-check.json" -w '%{http_code}' \
+            -H "Authorization: Bearer $TOKEN" \
+            "https://api.appstoreconnect.apple.com/v1/apps?fields%5Bapps%5D=bundleId,name")
+          echo "Apple answered $CODE"
+          cat "$RUNNER_TEMP/asc-check.json"; echo
+          test "$CODE" = 200
+
+      # The archive is built UNSIGNED; the export step below signs it for the
+      # App Store. Signing here asks for a development profile, which needs a
+      # registered iPhone (the team has none), and forcing "Apple Distribution"
+      # here is refused alongside automatic signing.
+      #
+      # The build number is the GitHub run number, so every upload is higher
+      # than the last one, which Apple requires. The version shown to people
+      # (1.0) comes from the project and changes only when we change it.
+      - name: Build
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGNING_ALLOWED=NO \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            archive
+
+      - name: Send to TestFlight
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>destination</key>
+            <string>upload</string>
+            <key>teamID</key>
+            <string>$APPLE_TEAM_ID</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Remove the API key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"

@@ -1,0 +1,68 @@
+# Builds the Android app and leaves an installable copy (an .apk) on the run.
+#
+# The copy is signed with Android's standard test key, so it installs on a
+# phone directly — download it on the phone, allow "install unknown apps" for
+# the browser once, and open it. That is how it reaches a receiver's Galaxy
+# before Tork has a Google Play developer account. It is NOT for the Play
+# store; a store copy needs Tork's own signing key.
+#
+# Runs by hand (Actions -> Build Android app -> Run workflow), and on any push
+# that changes the app.
+
+name: Build Android app
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "src/**"
+      - "android/**"
+      - "package.json"
+      - "package-lock.json"
+      - "capacitor.config.ts"
+      - ".github/workflows/android.yml"
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Capacitor 8 needs Java 21 to build for Android.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install
+        run: npm ci
+
+      - name: Build the app
+        run: npm run build
+
+      - name: Copy it into the Android project
+        run: npx cap sync android
+
+      # The run number becomes the version code, so each copy installs over
+      # the last one instead of being refused as older.
+      - name: Build the installable copy
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug -PversionCode=${{ github.run_number }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Receiving-android
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
