@@ -25,6 +25,12 @@ name: Send iPhone app to TestFlight
 
 on:
   workflow_dispatch:
+  # A tag starts it too. "Run workflow" only appears for workflows already on
+  # main, and this one lives on the native-app branch until it merges. Push a
+  # tag such as testflight-1 to send whatever that commit holds.
+  push:
+    tags:
+      - "testflight-*"
 
 concurrency:
   group: ios-testflight
